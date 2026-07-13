@@ -5,7 +5,10 @@ FROM golang:1.22-alpine AS builder
 
 WORKDIR /build
 COPY go.mod go.sum ./
-COPY *.go ./
+# Copy root .go files AND internal subpackages (brocadecli, brocadeexport,
+# evidencebundle, cmd) so `go build .` can resolve module-internal imports.
+# `COPY *.go` alone omitted the subpackage directories and broke the image build.
+COPY . ./
 
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \

@@ -75,6 +75,14 @@ jobs:
           timeout 5 ./connector-agent-test --version 2>&1 || true
           echo "✓ Binary identity check passed"
 
+      - name: Docker build sanity check
+        run: |
+          # Build the image WITHOUT pushing so a broken Dockerfile (e.g. missing
+          # subpackages in the build context) fails here before the publish job.
+          docker build -t connector-agent:ci-sanity .
+          echo "✓ Docker build succeeded"
+
+
   # ── Docker image → GHCR ──
   docker:
     needs: validate

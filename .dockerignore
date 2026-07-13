@@ -1,0 +1,12 @@
+# Keep the Docker build context minimal and reproducible.
+.git
+*.exe
+*.tar.gz
+*.bundle
+connector-agent
+connector-agent-test
+*_test.go
+**/testdata
+packaging
+scripts
+README.md
