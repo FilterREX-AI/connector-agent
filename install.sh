@@ -1,8 +1,13 @@
 #!/bin/bash
-# FilterREX Connector Host — Quick Install Script
+# FilterREX SAN Connector — Quick Install Script (public SAN-only build)
 #
-# Installs the connector host as a systemd service that can manage
-# multiple infrastructure targets simultaneously from a single host.
+# This is the installer shipped in the PUBLIC connector-agent repo. It installs
+# the read-only Brocade SAN evidence connector as a systemd service.
+#
+# The public connector is enrollment-first: the host registers with the backend
+# using an enrollment token, then Brocade FC switches are assigned remotely from
+# the FilterREX dashboard. There is no local target-credential entry flow — that
+# surface belongs to the private FilterREX platform, not this repo.
 #
 # Token:
 #   frc_...  = Enrollment/connector token from the FilterREX dashboard. Used to
@@ -15,13 +20,10 @@
 #
 # Usage — Pinned version:
 #   curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-#     | bash -s -- --enroll-token 'frc_...' --version v0.7.1
+#     | bash -s -- --enroll-token 'frc_...' --version v0.1.0-preview.1
 #
-# Usage — Legacy mode (backward compatible, persistent connector token):
-#   curl -fsSL ... | bash -s -- --token 'frc_...' --target-type 'proxmox' ...
-#
-# After enrollment, targets are managed remotely from the FilterREX dashboard.
-# No reinstall needed to add, update, or remove targets.
+# After enrollment, Brocade switches are managed remotely from the FilterREX
+# dashboard. No reinstall is needed to add, update, or remove targets.
 
 set -euo pipefail
 
@@ -31,25 +33,8 @@ REPO="filterrex-ai/connector-agent"
 BACKEND_URL="${BACKEND_URL:-https://qugzesfapcdhiyrhegdx.supabase.co}"
 ENROLLMENT_TOKEN=""
 CONNECTOR_TOKEN=""
-TARGET_TYPE=""
 HOST_LABEL=""
 PINNED_VERSION=""
-
-# Proxmox
-PROXMOX_BASE_URL=""
-PROXMOX_USERNAME=""
-PROXMOX_PASSWORD=""
-PROXMOX_TOKEN_ID=""
-PROXMOX_TOKEN_SECRET=""
-
-# TrueNAS
-TRUENAS_URL=""
-TRUENAS_API_KEY=""
-
-# Nutanix
-NUTANIX_URL=""
-NUTANIX_USERNAME=""
-NUTANIX_PASSWORD=""
 
 INSECURE_SKIP_VERIFY="false"
 POLL_INTERVAL_SECONDS="30"
@@ -57,8 +42,6 @@ INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/filterrex"
 SERVICE_USER="filterrex"
 FORCE_RESET_STATE=false
-REMOTE_LIVE_QUERY=false
-REMOTE_RESTART=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -66,24 +49,12 @@ while [[ $# -gt 0 ]]; do
     --enroll-token)         ENROLLMENT_TOKEN="$2";      shift 2 ;;
     --backend-url)          BACKEND_URL="$2";           shift 2 ;;
     --token)                CONNECTOR_TOKEN="$2";       shift 2 ;;
-    --target-type)          TARGET_TYPE="$2";           shift 2 ;;
     --label)                HOST_LABEL="$2";            shift 2 ;;
     --version)              PINNED_VERSION="$2";        shift 2 ;;
-    --proxmox-url)          PROXMOX_BASE_URL="$2";      shift 2 ;;
-    --proxmox-user)         PROXMOX_USERNAME="$2";      shift 2 ;;
-    --proxmox-token-id)     PROXMOX_TOKEN_ID="$2";      shift 2 ;;
-    --proxmox-token-secret) PROXMOX_TOKEN_SECRET="$2";  shift 2 ;;
-    --truenas-url)          TRUENAS_URL="$2";           shift 2 ;;
-    --truenas-api-key)      TRUENAS_API_KEY="$2";       shift 2 ;;
-    --nutanix-url)          NUTANIX_URL="$2";           shift 2 ;;
-    --nutanix-username)     NUTANIX_USERNAME="$2";      shift 2 ;;
     --insecure)             INSECURE_SKIP_VERIFY="true"; shift ;;
     --poll-interval)        POLL_INTERVAL_SECONDS="$2"; shift 2 ;;
     --config-dir)           CONFIG_DIR="$2";            shift 2 ;;
     --force-reset-state)    FORCE_RESET_STATE=true;     shift ;;
-    --enable-remote-actions) REMOTE_LIVE_QUERY=true; REMOTE_RESTART=true; shift ;;
-    --enable-live-query)    REMOTE_LIVE_QUERY=true;     shift ;;
-    --enable-remote-restart) REMOTE_RESTART=true;       shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -96,10 +67,10 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
   echo "  Enrollment (recommended):"
   echo "    --enroll-token 'frc_...'   Enrollment token from the FilterREX dashboard."
   echo "                                The host uses this to register, then retains it as its"
-  echo "                                connector token. Targets are managed remotely."
+  echo "                                connector token. Brocade switches are assigned remotely."
   echo ""
-  echo "  Legacy (single-target, backward compatible):"
-  echo "    --token 'frc_...'           Connector token, requires --target-type."
+  echo "  Reusing an existing identity:"
+  echo "    --token 'frc_...'           Persistent connector token from a prior enrollment."
   exit 1
 fi
 
@@ -107,18 +78,17 @@ fi
 # frc_ token that is used for enrollment and then retained as the connector token),
 # so no prefix-based token-type warning is emitted here.
 
-
 echo "╔══════════════════════════════════════════════╗"
-echo "║  FilterREX Connector Host — Installer           ║"
+echo "║  FilterREX SAN Connector — Installer            ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
 
 if [ -n "$ENROLLMENT_TOKEN" ]; then
   echo "→ Mode: Host enrollment (bootstrap)"
   echo "  The host will self-register with the backend using the enrollment token."
-  echo "  After enrollment, targets are assigned from the FilterREX dashboard."
+  echo "  After enrollment, Brocade switches are assigned from the FilterREX dashboard."
 else
-  echo "→ Mode: Legacy single-target (persistent connector token)"
+  echo "→ Mode: Reusing persistent connector token"
 fi
 
 # ── Version / release channel ──
@@ -174,98 +144,6 @@ if [ -f "${CONFIG_DIR}/host.json.enc" ] || [ -f "${CONFIG_DIR}/host.key" ]; then
   echo ""
 fi
 
-# ── Credential validation (only for new installs with a target type) ──
-
-if [ -n "$TARGET_TYPE" ]; then
-  echo "→ Initial target type: ${TARGET_TYPE}"
-
-  case "$TARGET_TYPE" in
-    proxmox)
-      if [ -n "$PROXMOX_TOKEN_ID" ] && [ -n "$PROXMOX_TOKEN_SECRET" ]; then
-        echo "→ Auth: Proxmox API token"
-      elif [ -n "$PROXMOX_USERNAME" ]; then
-        echo "→ Auth: Proxmox username/password (password will be prompted)"
-        if [ -z "$PROXMOX_PASSWORD" ]; then
-          if [ -t 0 ]; then
-            echo ""
-            read -s -p "  Enter Proxmox password for ${PROXMOX_USERNAME}: " PROXMOX_PASSWORD
-            echo ""
-          else
-            echo "  ⚠️  No interactive terminal detected."
-            echo "  Set PROXMOX_PASSWORD as an environment variable before running:"
-            echo "    export PROXMOX_PASSWORD='...'"
-            exit 1
-          fi
-        else
-          echo "  (using PROXMOX_PASSWORD from environment)"
-        fi
-        if [ -z "$PROXMOX_PASSWORD" ]; then
-          echo "Error: password cannot be empty"
-          exit 1
-        fi
-      elif [ -n "$PROXMOX_BASE_URL" ]; then
-        echo "Error: Proxmox URL provided but no auth credentials."
-        echo "  Use --proxmox-token-id and --proxmox-token-secret (recommended)"
-        echo "  Or  --proxmox-user to be prompted for a password"
-        exit 1
-      fi
-      ;;
-
-    truenas)
-      if [ -z "$TRUENAS_URL" ]; then
-        echo "Error: --truenas-url is required for TrueNAS targets"
-        exit 1
-      fi
-      if [ -z "$TRUENAS_API_KEY" ]; then
-        echo "Error: --truenas-api-key is required for TrueNAS targets"
-        echo "  Generate one in TrueNAS: Settings → API Keys → Add"
-        exit 1
-      fi
-      echo "→ Auth: TrueNAS API key"
-      ;;
-
-    nutanix)
-      if [ -z "$NUTANIX_URL" ]; then
-        echo "Error: --nutanix-url is required for Nutanix targets"
-        exit 1
-      fi
-      if [ -z "$NUTANIX_USERNAME" ]; then
-        echo "Error: --nutanix-username is required for Nutanix targets"
-        exit 1
-      fi
-      if [ -z "$NUTANIX_PASSWORD" ]; then
-        if [ -t 0 ]; then
-          echo "→ Auth: Nutanix username/password (password will be prompted)"
-          echo ""
-          read -s -p "  Enter Nutanix password for ${NUTANIX_USERNAME}: " NUTANIX_PASSWORD
-          echo ""
-        else
-          echo "  ⚠️  No interactive terminal detected."
-          echo "  Set NUTANIX_PASSWORD as an environment variable before running:"
-          echo "    export NUTANIX_PASSWORD='...'"
-          exit 1
-        fi
-      else
-        echo "→ Auth: Nutanix username/password (from environment)"
-      fi
-      if [ -z "$NUTANIX_PASSWORD" ]; then
-        echo "Error: password cannot be empty"
-        exit 1
-      fi
-      ;;
-
-    *)
-      echo "Error: unsupported --target-type '${TARGET_TYPE}'"
-      echo "  Supported: proxmox, truenas, nutanix, prometheus, grafana, ollama,"
-      echo "             generic-http, pure-storage, netapp-ontap, powerstore, powermax, powerflex"
-      echo ""
-      echo "  Tip: Use --enroll-token instead of --token to enroll a multi-target host."
-      echo "  Targets are then assigned remotely from the FilterREX dashboard."
-      exit 1
-      ;;
-  esac
-fi
-
 # ── Detect architecture ──
 
 ARCH=$(uname -m)
@@ -306,11 +184,11 @@ if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "000" ]; then
   echo "╚══════════════════════════════════════════════════════════════╝"
   echo ""
   echo "  Diagnostics:"
-  echo "    HTTP status:    ${HTTP_CODE}"
-  echo "    OS / Arch:      ${OS} / ${ARCH}"
-  echo "    Asset name:     ${ASSET_NAME}"
+  echo "    HTTP status:     ${HTTP_CODE}"
+  echo "    OS / Arch:       ${OS} / ${ARCH}"
+  echo "    Asset name:      ${ASSET_NAME}"
   echo "    Release channel: ${RELEASE_MODE}"
-  echo "    Download URL:   ${DOWNLOAD_URL}"
+  echo "    Download URL:    ${DOWNLOAD_URL}"
   echo ""
 
   if [ "$HTTP_CODE" = "404" ]; then
@@ -335,7 +213,7 @@ if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "000" ]; then
   echo ""
   echo "  ── Fallback: Docker (recommended) ──"
   echo ""
-  echo "  Use Docker to run the Connector Host without a binary release:"
+  echo "  Use Docker to run the SAN connector without a binary release:"
   echo ""
   echo "    docker run -d --name filterrex-connector \\"
   echo "      --pull always \\"
@@ -348,28 +226,11 @@ if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "000" ]; then
     echo "      -e CONNECTOR_TOKEN='<your_frc_token>' \\"
   fi
   [ -n "$HOST_LABEL" ] && echo "      -e HOST_LABEL='${HOST_LABEL}' \\"
-  [ -n "$TARGET_TYPE" ] && echo "      -e TARGET_TYPE='${TARGET_TYPE}' \\"
-  case "$TARGET_TYPE" in
-    proxmox)
-      [ -n "$PROXMOX_BASE_URL" ]     && echo "      -e PROXMOX_BASE_URL='${PROXMOX_BASE_URL}' \\"
-      [ -n "$PROXMOX_TOKEN_ID" ]     && echo "      -e PROXMOX_TOKEN_ID='...' \\"
-      [ -n "$PROXMOX_TOKEN_SECRET" ] && echo "      -e PROXMOX_TOKEN_SECRET='...' \\"
-      [ -n "$PROXMOX_USERNAME" ]     && echo "      -e PROXMOX_USERNAME='${PROXMOX_USERNAME}' \\"
-      ;;
-    truenas)
-      echo "      -e TRUENAS_URL='${TRUENAS_URL}' \\"
-      echo "      -e TRUENAS_API_KEY='...' \\"
-      ;;
-    nutanix)
-      echo "      -e NUTANIX_URL='${NUTANIX_URL}' \\"
-      echo "      -e NUTANIX_USERNAME='${NUTANIX_USERNAME}' \\"
-      ;;
-  esac
   [ "$INSECURE_SKIP_VERIFY" = "true" ] && echo "      -e INSECURE_SKIP_VERIFY=true \\"
   echo "      ghcr.io/filterrex-ai/connector-agent/connector-agent:latest"
   echo ""
   echo "  Note: Docker fallback always uses ':latest'. For a pinned image tag,"
-  echo "  replace ':latest' with the desired version (e.g., ':v0.7.1')."
+  echo "  replace ':latest' with the desired version (e.g., ':v0.1.0-preview.1')."
   echo ""
   echo "  If you prefer a bind mount instead of a named volume:"
   echo "    sudo mkdir -p /etc/filterrex/secrets"
@@ -405,9 +266,6 @@ echo "→ Installing to ${INSTALL_DIR}..."
 sudo mv "/tmp/connector-agent-${OS}-${ARCH}" "${INSTALL_DIR}/filterrex-connector"
 rm -f "/tmp/${ASSET_NAME}"
 
-# Backward-compatible symlink
-sudo ln -sf "${INSTALL_DIR}/filterrex-connector" "${INSTALL_DIR}/filterrex-connector"
-
 # ── Create service user ──
 
 if ! id "$SERVICE_USER" &>/dev/null; then
@@ -430,55 +288,23 @@ if [ "$EXISTING_INSTALL" = false ]; then
 
   if [ -n "$ENROLLMENT_TOKEN" ]; then
     # Enrollment mode — host registers on first run, receives persistent identity.
-    # Only store the bootstrap token and host-level config.
-    # NOTE: CONNECTOR_TOKEN is NOT set here. The host agent receives its
-    # persistent connector identity from the backend after successful enrollment.
+    # NOTE: CONNECTOR_TOKEN is NOT set here. The host receives its persistent
+    # connector identity from the backend after successful enrollment.
     cat <<EOF | sudo tee "${CONFIG_DIR}/connector.env" > /dev/null
 BACKEND_URL=${BACKEND_URL}
 FILTERREX_ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
 CONFIG_DIR=${CONFIG_DIR}
 HOST_LABEL=${HOST_LABEL}
-FILTERREX_REMOTE_LIVE_QUERY=${REMOTE_LIVE_QUERY}
-FILTERREX_REMOTE_RESTART=${REMOTE_RESTART}
-EOF
-
-    # If initial target settings are provided, store them as bootstrap hints.
-    # These help the host register its first target during enrollment, but
-    # ongoing target management happens via the FilterREX dashboard.
-    if [ -n "$TARGET_TYPE" ]; then
-      cat <<EOF | sudo tee -a "${CONFIG_DIR}/connector.env" > /dev/null
-INITIAL_TARGET_TYPE=${TARGET_TYPE}
-INITIAL_PROXMOX_BASE_URL=${PROXMOX_BASE_URL}
-INITIAL_PROXMOX_USERNAME=${PROXMOX_USERNAME}
-INITIAL_PROXMOX_PASSWORD=${PROXMOX_PASSWORD}
-INITIAL_PROXMOX_TOKEN_ID=${PROXMOX_TOKEN_ID}
-INITIAL_PROXMOX_TOKEN_SECRET=${PROXMOX_TOKEN_SECRET}
-INITIAL_TRUENAS_URL=${TRUENAS_URL}
-INITIAL_TRUENAS_API_KEY=${TRUENAS_API_KEY}
-INITIAL_NUTANIX_URL=${NUTANIX_URL}
-INITIAL_NUTANIX_USERNAME=${NUTANIX_USERNAME}
-INITIAL_NUTANIX_PASSWORD=${NUTANIX_PASSWORD}
 INSECURE_SKIP_VERIFY=${INSECURE_SKIP_VERIFY}
 POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS}
 EOF
-    fi
   else
-    # Legacy mode — persistent connector token, single target.
+    # Reuse an existing persistent connector token.
     cat <<EOF | sudo tee "${CONFIG_DIR}/connector.env" > /dev/null
 BACKEND_URL=${BACKEND_URL}
 CONNECTOR_TOKEN=${CONNECTOR_TOKEN}
-TARGET_TYPE=${TARGET_TYPE}
 CONFIG_DIR=${CONFIG_DIR}
-PROXMOX_BASE_URL=${PROXMOX_BASE_URL}
-PROXMOX_USERNAME=${PROXMOX_USERNAME}
-PROXMOX_PASSWORD=${PROXMOX_PASSWORD}
-PROXMOX_TOKEN_ID=${PROXMOX_TOKEN_ID}
-PROXMOX_TOKEN_SECRET=${PROXMOX_TOKEN_SECRET}
-TRUENAS_URL=${TRUENAS_URL}
-TRUENAS_API_KEY=${TRUENAS_API_KEY}
-NUTANIX_URL=${NUTANIX_URL}
-NUTANIX_USERNAME=${NUTANIX_USERNAME}
-NUTANIX_PASSWORD=${NUTANIX_PASSWORD}
+HOST_LABEL=${HOST_LABEL}
 INSECURE_SKIP_VERIFY=${INSECURE_SKIP_VERIFY}
 POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS}
 EOF
@@ -495,7 +321,7 @@ fi
 echo "→ Creating systemd service..."
 cat <<EOF | sudo tee /etc/systemd/system/filterrex-connector.service > /dev/null
 [Unit]
-Description=FilterREX Connector Host
+Description=FilterREX SAN Connector Host
 After=network-online.target
 Wants=network-online.target
 
@@ -520,15 +346,6 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# ── Migrate from legacy single-target service ──
-
-if systemctl is-enabled --quiet filterrex-connector 2>/dev/null; then
-  echo "→ Migrating from legacy single-target service..."
-  sudo systemctl stop filterrex-connector 2>/dev/null || true
-  sudo systemctl disable filterrex-connector 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/filterrex-connector.service
-fi
-
 # ── Enable and start ──
 
 echo "→ Starting connector host..."
@@ -537,13 +354,10 @@ sudo systemctl enable filterrex-connector
 sudo systemctl restart filterrex-connector
 
 echo ""
-echo "✅ FilterREX Connector Host installed and running!"
+echo "✅ FilterREX SAN Connector installed and running!"
 if [ -n "$ENROLLMENT_TOKEN" ]; then
   echo "   Mode: Enrollment (host will self-register with backend)"
-  echo "   After enrollment, manage targets from the FilterREX dashboard."
-fi
-if [ -n "$TARGET_TYPE" ]; then
-  echo "   Initial target hint: ${TARGET_TYPE} (will be registered during enrollment)"
+  echo "   After enrollment, assign Brocade switches from the FilterREX dashboard."
 fi
 if [ -n "$PINNED_VERSION" ]; then
   echo "   Version: ${PINNED_VERSION} (pinned)"
@@ -558,4 +372,4 @@ echo "  Logs:      sudo journalctl -u filterrex-connector -f"
 echo "  Stop:      sudo systemctl stop filterrex-connector"
 echo "  Uninstall: sudo systemctl stop filterrex-connector && sudo systemctl disable filterrex-connector && sudo rm ${INSTALL_DIR}/filterrex-connector /etc/systemd/system/filterrex-connector.service && sudo rm -rf ${CONFIG_DIR}"
 echo ""
-echo "Targets are managed from the FilterREX dashboard — no reinstall needed."
+echo "Brocade switches are managed from the FilterREX dashboard — no reinstall needed."

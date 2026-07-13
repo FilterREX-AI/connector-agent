@@ -11,9 +11,9 @@ Requires:       systemd
 %{?systemd_requires}
 
 %description
-Lightweight outbound-only agent for bridging on-premise infrastructure
-with the FilterREX platform. Supports multiple simultaneous targets
-including Prometheus, Grafana, iDRAC, and other enterprise systems.
+Lightweight, outbound-only agent for read-only Brocade SAN fabric evidence
+collection with the FilterREX platform. It enrolls once, connects outbound
+only, and needs no inbound firewall ports. All collection is read-only.
 
 Binary: /usr/bin/filterrex-connector
 Config: /etc/filterrex/connector.env

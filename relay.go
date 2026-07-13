@@ -28,7 +28,9 @@ const (
 // ── Vendor extension hooks ──
 //
 // The SAN-only public build compiles relay.go alone and handles only the
-// Brocade + generic REST path. In the full (default) build, a vendor
+// Brocade FOS REST transport (standard HTTPS calls to an assigned Brocade
+// switch). This is not a user-facing "generic HTTP" target and exposes no
+// arbitrary-URL proxy path. In the full (default) private build, a vendor
 // extension file's init() wires these hooks to add extra transports, auth
 // overrides, probing, and platform allow-list entries.
 //

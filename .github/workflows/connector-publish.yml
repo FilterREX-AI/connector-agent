@@ -122,7 +122,7 @@ jobs:
             VERSION=${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=https://github.com/filterrex-ai/connector-agent
-            org.opencontainers.image.description=FilterREX-AI Connector Host — Multi-Target Agent
+            org.opencontainers.image.description=FilterREX SAN Connector — read-only Brocade evidence collection agent
             org.opencontainers.image.vendor=FilterREX-AI
             org.opencontainers.image.licenses=Apache-2.0
 
