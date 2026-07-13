@@ -128,9 +128,14 @@ func (b *BackendClient) Post(token string, payload map[string]interface{}) error
 	req.Header.Set("X-Connector-Token", token)
 	req.Header.Set("X-Agent-Version", HostVersion)
 
-	b.mu.RLock()
+	b.mu.Lock()
+	if b.client == nil {
+		// Defensive: a BackendClient constructed directly (e.g. in tests)
+		// has no HTTP client. Lazily initialize rather than panic.
+		b.client = NewHTTPClient(nil, nil, 30*time.Second)
+	}
 	c := b.client
-	b.mu.RUnlock()
+	b.mu.Unlock()
 	resp, err := c.Do(req)
 	if err != nil {
 		return wrapConnectivityError("post", err)
