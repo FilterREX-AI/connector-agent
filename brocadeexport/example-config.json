@@ -1,0 +1,26 @@
+{
+  "brocade_bundle_export": true,
+  "artifact_dir": "/var/lib/filterrex/artifacts",
+  "known_hosts_path": "/opt/filterrex/known_hosts",
+  "ssh_port": 22,
+  "connect_timeout_seconds": 10,
+  "command_timeout_seconds": 30,
+  "brocade_targets": [
+    {
+      "switch_name": "DCX6-PROD-A",
+      "host": "10.10.10.21",
+      "username": "readonly",
+      "ssh_key_path": "/opt/filterrex/keys/brocade_ro",
+      "fabric_role": "source",
+      "fid": 128
+    },
+    {
+      "switch_name": "DCX6-PROD-B",
+      "host": "10.10.10.22",
+      "username": "readonly",
+      "ssh_key_path": "/opt/filterrex/keys/brocade_ro",
+      "fabric_role": "target",
+      "fid": 128
+    }
+  ]
+}

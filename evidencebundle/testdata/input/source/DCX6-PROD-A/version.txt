@@ -1,0 +1,5 @@
+Kernel:     2.6.34.6
+Fabric OS:  v9.2.0a
+Made on:    Wed Apr 03 12:00:00 2024
+Flash:      Mon Jan 01 00:00:00 2025
+BootProm:   1.0.0

@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+
+# ForgeAI Connector Host — Post-install
+# Reloads systemd. Does NOT auto-enable or start the service —
+# the admin must configure /etc/forgeai/connector.env first.
+
+case "$1" in
+  configure)
+    # Reload systemd to pick up the new/updated unit file
+    if [ -d /run/systemd/system ]; then
+      systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+
+    # Ensure config file has correct permissions
+    if [ -f /etc/forgeai/connector.env ]; then
+      chown root:forgeai /etc/forgeai/connector.env
+      chmod 0640 /etc/forgeai/connector.env
+    fi
+
+    echo ""
+    echo "============================================================"
+    echo "  ForgeAI Connector Host installed successfully."
+    echo ""
+    echo "  Next steps:"
+    echo "    1. Edit /etc/forgeai/connector.env"
+    echo "       Set FORGEAI_ENROLLMENT_TOKEN (or CONNECTOR_TOKEN)"
+    echo ""
+    echo "    2. Enable and start the service:"
+    echo "       sudo systemctl enable --now forgeai-host"
+    echo "============================================================"
+    echo ""
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

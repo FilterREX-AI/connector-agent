@@ -1,0 +1,51 @@
+# ForgeAI Connector Host — Docker Compose
+#
+# The Connector Host manages multiple targets from a single container.
+# Enroll with a token, then assign targets from the ForgeAI dashboard.
+#
+# Usage:
+#   FORGEAI_ENROLLMENT_TOKEN=fgbt_... docker compose up -d
+#
+# Security hardening:
+#   - read_only root filesystem (writes only to /etc/forgeai volume + /tmp tmpfs)
+#   - All Linux capabilities dropped
+#   - No privilege escalation allowed
+#   - No Docker socket access
+
+services:
+  forgeai-host:
+    image: ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
+    pull_policy: always
+    container_name: forgeai-host
+    restart: unless-stopped
+
+    # ── Networking ──
+    # Host networking lets the agent reach every LAN segment the Docker host
+    # itself can route to (e.g. 10.10.100.0/24 in addition to 192.168.40.0/24).
+    # In bridge mode the container is NAT'd and may be unable to reach hosts
+    # on subnets the Docker host can route to. See README "Network requirements".
+    network_mode: host
+
+    # ── Security hardening ──
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=10m
+
+    volumes:
+      # Persist encrypted host state across container restarts
+      - forgeai-config:/etc/forgeai
+    environment:
+      # Required: Enrollment token from /account/local-systems
+      FORGEAI_ENROLLMENT_TOKEN: "${FORGEAI_ENROLLMENT_TOKEN}"
+
+      # ── Remote actions (opt-in, both disabled by default) ──
+      # FORGEAI_REMOTE_LIVE_QUERY: "true"   # Enable Live Query relay from dashboard
+      # FORGEAI_REMOTE_RESTART: "true"       # Enable remote agent restart from dashboard
+
+volumes:
+  forgeai-config:
+    driver: local

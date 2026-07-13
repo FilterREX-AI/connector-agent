@@ -1,0 +1,15 @@
+switchName:    DEMO_TGT_A
+switchType:    181.0
+switchState:   Online
+switchMode:    Native
+switchRole:    Principal
+switchDomain:  11
+switchId:      fffc0b
+switchWwn:     10:00:50:eb:1a:00:02:01
+zoning:        ON (TGT_CFG)
+switchBeacon:  OFF
+FC Router:     OFF
+Fabric Name:   DemoTargetFabric
+HIF Mode:      OFF
+Allow XISL Use: OFF
+LS Attributes: [FID: 200, Base Switch: No, Default Switch: Yes, Address Mode 0]

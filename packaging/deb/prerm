@@ -1,0 +1,30 @@
+#!/bin/sh
+set -e
+
+# ForgeAI Connector Host — Pre-remove
+# Stops and disables the service before package removal.
+
+case "$1" in
+  remove|deconfigure)
+    if [ -d /run/systemd/system ]; then
+      if systemctl is-active --quiet forgeai-host 2>/dev/null; then
+        systemctl stop forgeai-host >/dev/null 2>&1 || true
+      fi
+      if systemctl is-enabled --quiet forgeai-host 2>/dev/null; then
+        systemctl disable forgeai-host >/dev/null 2>&1 || true
+      fi
+    fi
+    ;;
+  upgrade)
+    # On upgrade, stop the service so postinst can restart cleanly
+    if [ -d /run/systemd/system ]; then
+      if systemctl is-active --quiet forgeai-host 2>/dev/null; then
+        systemctl stop forgeai-host >/dev/null 2>&1 || true
+      fi
+    fi
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

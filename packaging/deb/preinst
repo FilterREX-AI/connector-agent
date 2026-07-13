@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+# ForgeAI Connector Host — Pre-install
+# Creates the service user and config directory.
+
+case "$1" in
+  install|upgrade)
+    # Create system user if it does not exist
+    if ! getent group forgeai >/dev/null 2>&1; then
+      groupadd --system forgeai
+    fi
+    if ! getent passwd forgeai >/dev/null 2>&1; then
+      useradd --system --gid forgeai --no-create-home \
+        --home-dir /nonexistent --shell /usr/sbin/nologin \
+        --comment "ForgeAI Connector Host" forgeai
+    fi
+
+    # Ensure config directory exists with correct ownership
+    mkdir -p /etc/forgeai
+    chown root:forgeai /etc/forgeai
+    chmod 0750 /etc/forgeai
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

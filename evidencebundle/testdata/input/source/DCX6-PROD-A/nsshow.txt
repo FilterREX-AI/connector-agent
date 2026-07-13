@@ -1,0 +1,8 @@
+ N    0b1100;    11,17; 10:00:00:00:c9:22:22:22; 20:00:00:00:c9:22:22:22; na
+                FC4s: FCP
+                NodeSymb: [27] "DEMO TGT HOSTPILOT initiator"
+                Device type: Physical Initiator
+ N    0b2100;    11,33; 50:00:09:73:00:00:02:21; 50:00:09:73:00:00:02:20; na
+                FC4s: FCP
+                NodeSymb: [22] "DEMO TGT ARRAY_FE0 target"
+                Device type: Physical Target

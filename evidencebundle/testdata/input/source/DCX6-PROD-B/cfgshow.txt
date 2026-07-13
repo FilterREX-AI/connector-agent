@@ -1,0 +1,99 @@
+Defined configuration:
+ cfg:   PROD_CFG_A
+        Z_ESXPROD01_PMAXEAST; Z_ESXPROD02_PMAXEAST; Z_ESXPROD03_PMAXWEST; Z_ESXPROD04_PMAXWEST; Z_ESXPROD05_PMAXEAST; Z_ESXPROD06_PMAXWEST; Z_ESXPROD07_PMAXEAST; Z_DBQUAD01_PMAXEAST; Z_PROD_APP7_PMAXEAST; Z_SRDF_REPLICATION; Z_HOSTPILOT_A
+ zone:  Z_ESXPROD01_PMAXEAST
+        esxprod01_a; pmax_east_fa1_0
+ zone:  Z_ESXPROD02_PMAXEAST
+        esxprod02_a; pmax_east_fa1_0
+ zone:  Z_ESXPROD03_PMAXWEST
+        esxprod03_a; pmax_west_fa1_0
+ zone:  Z_ESXPROD04_PMAXWEST
+        esxprod04_a; pmax_west_fa1_0
+ zone:  Z_ESXPROD05_PMAXEAST
+        esxprod05_a; pmax_east_fa1_1
+ zone:  Z_ESXPROD06_PMAXWEST
+        esxprod06_a; pmax_west_fa1_1
+ zone:  Z_ESXPROD07_PMAXEAST
+        esxprod07_a; esxprod07_b; pmax_east_fa1_0
+ zone:  Z_DBQUAD01_PMAXEAST
+        dbquad01_p1; dbquad01_p2; pmax_east_fa1_0
+ zone:  Z_PROD_APP7_PMAXEAST
+        prodapp7_hba0; pmax_east_fa1_1
+ zone:  Z_SRDF_REPLICATION
+        pmax_east_rdf_0; pmax_east_rdf_1
+ zone:  Z_HOSTPILOT_A
+        esxprod01_a; pmax_east_fa1_1
+ alias: esxprod01_a
+        10:00:00:00:c9:01:00:0a
+ alias: esxprod02_a
+        10:00:00:00:c9:02:00:0a
+ alias: esxprod03_a
+        10:00:00:00:c9:03:00:0a
+ alias: esxprod04_a
+        10:00:00:00:c9:04:00:0a
+ alias: esxprod05_a
+        21:00:00:24:ff:4b:05:0a
+ alias: esxprod06_a
+        10:00:00:00:c9:06:00:0a
+ alias: esxprod07_a
+        10:00:00:00:c9:07:00:0a
+ alias: esxprod07_b
+        10:00:00:00:c9:07:00:0b
+ alias: prodapp7_hba0
+        10:00:00:00:c9:77:07:0a
+ alias: dbquad01_p1
+        21:00:00:24:ff:4b:db:01
+ alias: dbquad01_p2
+        21:00:00:24:ff:4b:db:02
+ alias: pmax_east_fa1_0
+        50:00:09:72:00:c0:e4:00
+ alias: pmax_east_fa1_1
+        50:00:09:72:00:c0:e4:01
+ alias: pmax_west_fa1_0
+        50:00:09:72:14:24:c8:00
+ alias: pmax_west_fa1_1
+        50:00:09:72:14:24:c8:01
+ alias: pmax_east_rdf_0
+        50:00:09:72:00:c0:e6:00
+ alias: pmax_east_rdf_1
+        50:00:09:72:00:c0:e6:01
+ alias: ORPHAN_RETIRED_HOST
+        10:00:00:00:c9:de:ad:01
+
+Effective configuration:
+ cfg:   PROD_CFG_A
+ zone:  Z_ESXPROD01_PMAXEAST
+        10:00:00:00:c9:01:00:0a
+        50:00:09:72:00:c0:e4:00
+ zone:  Z_ESXPROD02_PMAXEAST
+        10:00:00:00:c9:02:00:0a
+        50:00:09:72:00:c0:e4:00
+ zone:  Z_ESXPROD03_PMAXWEST
+        10:00:00:00:c9:03:00:0a
+        50:00:09:72:14:24:c8:00
+ zone:  Z_ESXPROD04_PMAXWEST
+        10:00:00:00:c9:04:00:0a
+        50:00:09:72:14:24:c8:00
+ zone:  Z_ESXPROD05_PMAXEAST
+        21:00:00:24:ff:4b:05:0a
+        50:00:09:72:00:c0:e4:01
+ zone:  Z_ESXPROD06_PMAXWEST
+        10:00:00:00:c9:06:00:0a
+        50:00:09:72:14:24:c8:01
+ zone:  Z_ESXPROD07_PMAXEAST
+        10:00:00:00:c9:07:00:0a
+        10:00:00:00:c9:07:00:0b
+        50:00:09:72:00:c0:e4:00
+ zone:  Z_DBQUAD01_PMAXEAST
+        21:00:00:24:ff:4b:db:01
+        21:00:00:24:ff:4b:db:02
+        50:00:09:72:00:c0:e4:00
+ zone:  Z_PROD_APP7_PMAXEAST
+        10:00:00:00:c9:77:07:0a
+        50:00:09:72:00:c0:e4:01
+ zone:  Z_SRDF_REPLICATION
+        50:00:09:72:00:c0:e6:00
+        50:00:09:72:00:c0:e6:01
+ zone:  Z_HOSTPILOT_A
+        10:00:00:00:c9:01:00:0a
+        50:00:09:72:00:c0:e4:01

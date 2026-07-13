@@ -1,0 +1,28 @@
+{
+  "profile_version": "1.0",
+  "vendor": "brocade-fos",
+  "notes": "Read-only Brocade FOS command profile for the FilterREX collector. 'id' is the canonical command label written to manifest.files[].command and MUST resolve in BROCADE_COMMAND_CATALOG with the same supportLevel (enforced by scripts/lib/brocadeCommandProfileParity.ts). 'exec' is the actual read-only command the collector runs over SSH; {port_range} is substituted from --port-range. No config-mode or mutating commands are permitted here.",
+  "defaults": {
+    "port_range": "0-895"
+  },
+  "commands": [
+    { "id": "switchshow", "exec": "switchshow", "filename": "switchshow.txt", "supportLevel": "parsed", "importance": "recommended" },
+    { "id": "fabricshow", "exec": "fabricshow", "filename": "fabricshow.txt", "supportLevel": "parsed", "importance": "recommended" },
+    { "id": "nsshow", "exec": "nsshow", "filename": "nsshow.txt", "supportLevel": "parsed", "importance": "recommended" },
+    { "id": "cfgshow", "exec": "cfgshow", "filename": "cfgshow.txt", "supportLevel": "parsed", "importance": "required" },
+    { "id": "zoneshow", "exec": "zoneshow", "filename": "zoneshow.txt", "supportLevel": "parsed", "importance": "optional" },
+    { "id": "version", "exec": "version", "filename": "version.txt", "supportLevel": "parsed", "importance": "recommended" },
+    { "id": "firmwareshow", "exec": "firmwareshow", "filename": "firmwareshow.txt", "supportLevel": "parsed", "importance": "optional" },
+    { "id": "portshow", "exec": "portshow -i {port_range} -f", "filename": "portshow.txt", "supportLevel": "parsed", "importance": "optional" },
+    { "id": "chassisshow", "exec": "chassisshow", "filename": "chassisshow.txt", "supportLevel": "parsed", "importance": "optional" },
+
+    { "id": "sfpshow -all", "exec": "sfpshow -all", "filename": "sfpshow-all.txt", "supportLevel": "supporting_only", "importance": "optional" },
+    { "id": "portloginshow", "exec": "portloginshow", "filename": "portloginshow.txt", "supportLevel": "supporting_only", "importance": "optional" },
+    { "id": "errdump", "exec": "errdump", "filename": "errdump.txt", "supportLevel": "supporting_only", "importance": "optional" },
+    { "id": "slotshow", "exec": "slotshow", "filename": "slotshow.txt", "supportLevel": "supporting_only", "importance": "optional" },
+    { "id": "islshow", "exec": "islshow", "filename": "islshow.txt", "supportLevel": "supporting_only", "importance": "optional" },
+    { "id": "trunkshow", "exec": "trunkshow", "filename": "trunkshow.txt", "supportLevel": "supporting_only", "importance": "optional" },
+    { "id": "portcfgshow", "exec": "portcfgshow", "filename": "portcfgshow.txt", "supportLevel": "supporting_only", "importance": "optional" },
+    { "id": "porterrshow", "exec": "porterrshow", "filename": "porterrshow.txt", "supportLevel": "supporting_only", "importance": "optional" }
+  ]
+}

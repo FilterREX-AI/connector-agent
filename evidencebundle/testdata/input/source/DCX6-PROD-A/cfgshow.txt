@@ -1,0 +1,15 @@
+Defined configuration:
+ cfg:   TGT_CFG
+        TGT_ZONE_HOSTPILOT_ARRAY
+ zone:  TGT_ZONE_HOSTPILOT_ARRAY
+        TGT_HOSTPILOT; TGT_ARRAY_FE0
+ alias: TGT_HOSTPILOT
+        10:00:00:00:c9:22:22:22
+ alias: TGT_ARRAY_FE0
+        50:00:09:73:00:00:02:21
+
+Effective configuration:
+ cfg:   TGT_CFG
+ zone:  TGT_ZONE_HOSTPILOT_ARRAY
+        10:00:00:00:c9:22:22:22
+        50:00:09:73:00:00:02:21

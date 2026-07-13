@@ -1,0 +1,15 @@
+switchName:    SW-A-EAST-CORE1
+switchType:    181.0
+switchState:   Online
+switchMode:    Native
+switchRole:    Principal
+switchDomain:  1
+switchId:      fffc01
+switchWwn:     10:00:50:eb:1a:00:0a:01
+zoning:        ON (PROD_CFG_A)
+switchBeacon:  OFF
+FC Router:     OFF
+Fabric Name:   SRDF_PROD_A
+HIF Mode:      OFF
+Allow XISL Use: OFF
+LS Attributes: [FID: 128, Base Switch: No, Default Switch: Yes, Address Mode 0]

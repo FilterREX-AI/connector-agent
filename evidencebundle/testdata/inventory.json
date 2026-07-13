@@ -1,0 +1,9 @@
+{
+  "collected_at": "2026-07-12T23:30:24Z",
+  "fabric_role": "source",
+  "customer_supplied": true,
+  "switches": [
+    { "switch_name": "DCX6-PROD-A", "fabric_role": "source", "fid": 128, "notes": "Prod fabric A" },
+    { "switch_name": "DCX6-PROD-B", "fabric_role": "source", "fid": 128, "notes": "Prod fabric A" }
+  ]
+}

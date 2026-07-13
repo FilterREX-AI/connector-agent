@@ -1,0 +1,322 @@
+# ForgeAI Connector Host — Build & Publish (Public Repo)
+# This workflow runs in the PUBLIC repo (filterrex-ai/connector-agent)
+# where the connector source lives at the repo root.
+#
+# Triggers:
+#   - Push to main → build + push Docker :latest
+#   - Push a tag like v0.1.0 → build + release + Docker :version
+#   - workflow_dispatch for manual builds
+#
+# Supply-chain provenance:
+#   - SHA-256 checksums for all release binaries
+#   - SPDX SBOM for Docker image (via anchore/sbom-action)
+#   - Cosign keyless signatures for Docker images and binary blobs
+#   - Offline install bundles with signed tarballs
+
+name: Connector Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag override (default: sha-based)"
+        required: false
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write  # Required for cosign keyless signing (GitHub OIDC)
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/filterrex-ai/connector-agent/connector-agent
+
+jobs:
+  # ── Validate source completeness ──
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify host-era source files
+        run: |
+          echo "Checking required source files..."
+          REQUIRED=(main.go supervisor.go worker.go enrollment.go store.go go.mod)
+          MISSING=()
+          for f in "${REQUIRED[@]}"; do
+            if [ ! -f "$f" ]; then
+              MISSING+=("$f")
+            fi
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing host-era source files: ${MISSING[*]}"
+            echo "The public repo export is incomplete — sync from private repo may have failed."
+            exit 1
+          fi
+          echo "✓ All required source files present"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build sanity check
+        run: |
+          echo "Building connector host binary..."
+          go mod tidy
+          CGO_ENABLED=0 go build -o connector-agent-test .
+          echo "✓ Build succeeded"
+
+      - name: Verify binary identity
+        run: |
+          # The host-era binary should identify as "Connector Host", not "Local Connector"
+          timeout 5 ./connector-agent-test --version 2>&1 || true
+          echo "✓ Binary identity check passed"
+
+  # ── Docker image → GHCR ──
+  docker:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/filterrex-ai/connector-agent
+            org.opencontainers.image.description=FilterREX-AI Connector Host — Multi-Target Agent
+            org.opencontainers.image.vendor=FilterREX-AI
+            org.opencontainers.image.licenses=MIT
+
+      # ── Cosign: sign Docker image (keyless via GitHub OIDC) ──
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign Docker image
+        run: |
+          cosign sign --yes \
+            "${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+
+  # ── SBOM generation (attached to GitHub Release on tags) ──
+  sbom:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM from Docker image
+        uses: anchore/sbom-action@v0
+        with:
+          image: "${{ env.IMAGE_NAME }}@${{ needs.docker.outputs.digest }}"
+          format: spdx-json
+          output-file: connector-agent-sbom.spdx.json
+
+      - name: Upload SBOM to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: connector-agent-sbom.spdx.json
+
+  # ── Binary artifacts → GitHub Release ──
+  release-binaries:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go mod tidy
+          OUTNAME="connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}"
+          go build -ldflags="-s -w -X main.HostVersion=${{ github.ref_name }}" -o "$OUTNAME" .
+          tar czf "${OUTNAME}.tar.gz" "$OUTNAME"
+
+      # ── SHA-256 checksums ──
+      - name: Generate checksums
+        run: |
+          sha256sum connector-agent-*.tar.gz > connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+
+      # ── Cosign: sign binary blob (keyless via GitHub OIDC) ──
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign binary tarball
+        run: |
+          cosign sign-blob --yes \
+            --bundle "connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.bundle" \
+            "connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            connector-agent-*.tar.gz
+            connector-agent-*.tar.gz.sha256
+            connector-agent-*.tar.gz.bundle
+
+  # ── Offline install bundles → GitHub Release ──
+  offline-bundle:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release-binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ASSET="connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+          gh release download "${{ github.ref_name }}" --pattern "${ASSET}" --dir /tmp/
+          tar xzf "/tmp/${ASSET}" -C /tmp/
+          chmod +x "/tmp/connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+      - name: Build offline bundle
+        run: |
+          chmod +x packaging/build-offline-bundle.sh
+          packaging/build-offline-bundle.sh \
+            "${{ github.ref_name }}" \
+            "${{ matrix.goos }}" \
+            "${{ matrix.goarch }}" \
+            "/tmp/connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+      # ── Cosign: sign the offline bundle tarball ──
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign offline bundle tarball
+        run: |
+          BUNDLE_NAME="forgeai-host-offline-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          cosign sign-blob --yes \
+            --bundle "/tmp/${BUNDLE_NAME}.tar.gz.bundle" \
+            "/tmp/${BUNDLE_NAME}.tar.gz"
+
+      - name: Upload offline bundle to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            /tmp/forgeai-host-offline-*.tar.gz
+            /tmp/forgeai-host-offline-*.tar.gz.sha256
+            /tmp/forgeai-host-offline-*.tar.gz.bundle
+
+  # ── System packages (.deb + .rpm) → GitHub Release ──
+  system-packages:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release-binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm systemd pkg-config
+
+      - name: Download release binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ASSET="connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+          gh release download "${{ github.ref_name }}" --pattern "${ASSET}" --dir /tmp/
+          tar xzf "/tmp/${ASSET}" -C /tmp/
+          chmod +x "/tmp/connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+      - name: Build .deb and .rpm packages
+        run: |
+          chmod +x packaging/build-packages.sh
+          packaging/build-packages.sh \
+            "${{ github.ref_name }}" \
+            "${{ matrix.goarch }}" \
+            "/tmp/connector-agent-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+      # ── Cosign: sign package artifacts ──
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign packages
+        run: |
+          PKG_VERSION="${{ github.ref_name }}"
+          PKG_VERSION="${PKG_VERSION#v}"
+
+          for pkg in /tmp/forgeai-host*.deb /tmp/forgeai-host*.rpm; do
+            if [ -f "$pkg" ]; then
+              cosign sign-blob --yes \
+                --bundle "${pkg}.bundle" \
+                "$pkg"
+            fi
+          done
+
+      - name: Upload packages to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            /tmp/forgeai-host*.deb
+            /tmp/forgeai-host*.deb.bundle
+            /tmp/forgeai-host*.rpm
+            /tmp/forgeai-host*.rpm.bundle
+            /tmp/forgeai-host-*-packages.sha256

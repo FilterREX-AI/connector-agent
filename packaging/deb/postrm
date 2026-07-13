@@ -1,0 +1,35 @@
+#!/bin/sh
+set -e
+
+# ForgeAI Connector Host — Post-remove
+# Reloads systemd after unit file removal.
+# Config and user are only cleaned on purge.
+
+case "$1" in
+  remove)
+    # Reload systemd — the package manager removes the unit file
+    if [ -d /run/systemd/system ]; then
+      systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+    ;;
+  purge)
+    if [ -d /run/systemd/system ]; then
+      systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+    # Remove config directory on purge
+    rm -rf /etc/forgeai
+    # Remove service user on purge
+    if getent passwd forgeai >/dev/null 2>&1; then
+      userdel forgeai 2>/dev/null || true
+    fi
+    if getent group forgeai >/dev/null 2>&1; then
+      groupdel forgeai 2>/dev/null || true
+    fi
+    ;;
+  upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

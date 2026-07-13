@@ -1,0 +1,24 @@
+[Unit]
+Description=ForgeAI Connector Host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=forgeai
+EnvironmentFile=/etc/forgeai/connector.env
+ExecStart=/usr/bin/forgeai-host
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/forgeai
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

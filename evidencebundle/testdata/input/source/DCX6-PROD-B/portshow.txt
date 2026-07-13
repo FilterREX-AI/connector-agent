@@ -1,0 +1,22 @@
+Index Port Address Media Speed State     Proto
+=================================================
+  0   0   010000   id    N16   Online    FC  E-Port  10:00:50:eb:1a:00:0a:02
+  1   1   010100   id    N16   Online    FC  E-Port  10:00:50:eb:1a:00:0a:03
+ 17  17  011100   id    N16   Online    FC  F-Port  10:00:00:00:c9:01:00:0a
+ 18  18  011200   id    N16   Online    FC  F-Port  10:00:00:00:c9:02:00:0a
+ 19  19  011300   id    N16   Online    FC  F-Port  10:00:00:00:c9:03:00:0a
+ 20  20  011400   id    N16   Online    FC  F-Port  10:00:00:00:c9:04:00:0a
+ 21  21  011500   id    N16   Online    FC  F-Port  21:00:00:24:ff:4b:05:0a
+ 22  22  011600   id    N16   Online    FC  F-Port  10:00:00:00:c9:06:00:0a
+ 23  23  011700   id    N16   Online    FC  F-Port  10:00:00:00:c9:07:00:0a
+ 24  24  011800   id    N16   Online    FC  F-Port  10:00:00:00:c9:07:00:0b
+ 25  25  011900   id    N16   Online    FC  F-Port  10:00:00:00:c9:77:07:0a
+ 26  26  011a00   id    N16   Online    FC  F-Port  21:00:00:24:ff:4b:db:01
+ 27  27  011b00   id    N16   Online    FC  F-Port  21:00:00:24:ff:4b:db:02
+ 28  28  011c00   id    N16   Online    FC  F-Port  10:00:00:00:c9:99:00:0a
+ 33  33  012100   id    N16   Online    FC  F-Port  50:00:09:72:00:c0:e4:00
+ 34  34  012200   id    N16   Online    FC  F-Port  50:00:09:72:00:c0:e4:01
+ 35  35  012300   id    N16   Online    FC  F-Port  50:00:09:72:14:24:c8:00
+ 36  36  012400   id    N16   Online    FC  F-Port  50:00:09:72:14:24:c8:01
+ 40  40  012800   id    N16   Online    FC  F-Port  50:00:09:72:00:c0:e6:00
+ 41  41  012900   id    N16   Online    FC  F-Port  50:00:09:72:00:c0:e6:01

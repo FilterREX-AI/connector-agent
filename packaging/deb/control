@@ -1,0 +1,16 @@
+Package: forgeai-host
+Version: __VERSION__
+Architecture: __ARCH__
+Maintainer: ForgeAI <support@forgeai.com>
+Depends: systemd
+Section: admin
+Priority: optional
+Homepage: https://forgeai.com
+Description: ForgeAI Connector Host — Enterprise Infrastructure Agent
+ Lightweight outbound-only agent for bridging on-premise infrastructure
+ with the ForgeAI platform. Supports multiple simultaneous targets
+ including Prometheus, Grafana, iDRAC, and other enterprise systems.
+ .
+ Binary: /usr/bin/forgeai-host
+ Config: /etc/forgeai/connector.env
+ Service: forgeai-host.service
