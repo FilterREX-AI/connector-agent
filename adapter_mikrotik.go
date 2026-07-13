@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — MikroTik RouterOS Adapter (read-only)
+// FilterREX Connector Host — MikroTik RouterOS Adapter (read-only)
 //
 // Collects system, interface, bridge, routing, firewall, DHCP, DNS,
 // neighbor, wireless, and health data from MikroTik RouterOS devices

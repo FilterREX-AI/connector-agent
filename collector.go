@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Concurrent Sub-Collection
+// FilterREX Connector Host — Concurrent Sub-Collection
 //
 // Provides bounded concurrency helpers for multi-call adapters
 // (Nutanix, PowerMax, Proxmox, etc.) to parallelize independent

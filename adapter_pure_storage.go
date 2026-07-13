@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Pure Storage Adapter (read-only)
+// FilterREX Connector Host — Pure Storage Adapter (read-only)
 //
 // Collects array health, capacity posture, alerts, and system inventory
 // from Pure Storage FlashArray via REST API v2.

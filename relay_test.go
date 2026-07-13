@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Relay Unit Tests
+// FilterREX Connector Host — Relay Unit Tests
 //
 // Focused regression tests for URL construction, TrueNAS method
 // translation, and platform dispatch correctness.

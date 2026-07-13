@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Update Signing Public Keys
+// FilterREX Connector Host — Update Signing Public Keys
 //
 // Contains the Ed25519 public key(s) used to verify signed update manifests.
 // Public keys are NOT secret — committing them in source is simpler and more
@@ -17,14 +17,14 @@ package main
 // To add a key: generate with `go run scripts/sign-manifest.go keygen`,
 // then add the public key here with an appropriate key_id.
 var UpdatePublicKeys = map[string]string{
-	"primary": "FORGEAI_UPDATE_SIGNING_KEY_PLACEHOLDER",
+	"primary": "FILTERREX_UPDATE_SIGNING_KEY_PLACEHOLDER",
 }
 
 // IsUpdateKeyConfigured returns true if at least one real (non-placeholder)
 // public key is present. Used for fail-closed initialization.
 func IsUpdateKeyConfigured() bool {
 	for _, v := range UpdatePublicKeys {
-		if v != "" && v != "FORGEAI_UPDATE_SIGNING_KEY_PLACEHOLDER" {
+		if v != "" && v != "FILTERREX_UPDATE_SIGNING_KEY_PLACEHOLDER" {
 			return true
 		}
 	}

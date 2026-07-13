@@ -1,4 +1,4 @@
-# ForgeAI Connector Host — Build & Publish (Public Repo)
+# FilterREX Connector Host — Build & Publish (Public Repo)
 # This workflow runs in the PUBLIC repo (filterrex-ai/connector-agent)
 # where the connector source lives at the repo root.
 #
@@ -243,7 +243,7 @@ jobs:
 
       - name: Sign offline bundle tarball
         run: |
-          BUNDLE_NAME="forgeai-host-offline-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          BUNDLE_NAME="filterrex-connector-offline-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           cosign sign-blob --yes \
             --bundle "/tmp/${BUNDLE_NAME}.tar.gz.bundle" \
             "/tmp/${BUNDLE_NAME}.tar.gz"
@@ -252,9 +252,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            /tmp/forgeai-host-offline-*.tar.gz
-            /tmp/forgeai-host-offline-*.tar.gz.sha256
-            /tmp/forgeai-host-offline-*.tar.gz.bundle
+            /tmp/filterrex-connector-offline-*.tar.gz
+            /tmp/filterrex-connector-offline-*.tar.gz.sha256
+            /tmp/filterrex-connector-offline-*.tar.gz.bundle
 
   # ── System packages (.deb + .rpm) → GitHub Release ──
   system-packages:
@@ -303,7 +303,7 @@ jobs:
           PKG_VERSION="${{ github.ref_name }}"
           PKG_VERSION="${PKG_VERSION#v}"
 
-          for pkg in /tmp/forgeai-host*.deb /tmp/forgeai-host*.rpm; do
+          for pkg in /tmp/filterrex-connector*.deb /tmp/filterrex-connector*.rpm; do
             if [ -f "$pkg" ]; then
               cosign sign-blob --yes \
                 --bundle "${pkg}.bundle" \
@@ -315,8 +315,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            /tmp/forgeai-host*.deb
-            /tmp/forgeai-host*.deb.bundle
-            /tmp/forgeai-host*.rpm
-            /tmp/forgeai-host*.rpm.bundle
-            /tmp/forgeai-host-*-packages.sha256
+            /tmp/filterrex-connector*.deb
+            /tmp/filterrex-connector*.deb.bundle
+            /tmp/filterrex-connector*.rpm
+            /tmp/filterrex-connector*.rpm.bundle
+            /tmp/filterrex-connector-*-packages.sha256

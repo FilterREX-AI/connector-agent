@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Dell iDRAC Adapter (read-only)
+// FilterREX Connector Host — Dell iDRAC Adapter (read-only)
 //
 // Collects system health, hardware inventory, thermal status, power,
 // and SEL logs from Dell iDRAC via the standard DMTF Redfish v1 API.

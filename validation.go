@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Profile & Config Validation
+// FilterREX Connector Host — Profile & Config Validation
 //
 // Validates target profiles, auth configurations, and enforces
 // hard guardrails for dangerous adapter types (generic-http).

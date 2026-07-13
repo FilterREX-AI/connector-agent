@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Prometheus Adapter (read-only)
+// FilterREX Connector Host — Prometheus Adapter (read-only)
 //
 // Collects target health, basic metadata, and runtime posture from
 // a Prometheus server via its HTTP API. No admin mutations.

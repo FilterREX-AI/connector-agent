@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Grafana Adapter (read-only)
+// FilterREX Connector Host — Grafana Adapter (read-only)
 //
 // Collects health, datasource inventory, dashboard summary, and alert
 // posture from Grafana via its HTTP API using a service-account token.

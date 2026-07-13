@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — TrueNAS Adapter (bridge)
+// FilterREX Connector Host — TrueNAS Adapter (bridge)
 //
 // Wraps the existing TrueNASClient to conform to the TargetAdapter interface.
 // The actual TrueNAS API logic remains in truenas.go.

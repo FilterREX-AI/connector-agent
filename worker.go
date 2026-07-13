@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Worker Lifecycle Manager
+// FilterREX Connector Host — Worker Lifecycle Manager
 //
 // Each target profile gets an independent worker goroutine.
 // Workers are started, stopped, restarted, paused, and degraded

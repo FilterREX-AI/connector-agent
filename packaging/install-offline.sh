@@ -1,25 +1,25 @@
 #!/bin/bash
-# ForgeAI Connector Host — Offline Installer
+# FilterREX Connector Host — Offline Installer
 #
 # Installs the connector host from a local bundle without network access
 # to GitHub or any package registry. Part of the offline install bundle
 # for restricted / air-gapped enterprise deployments.
 #
 # Deployment modes:
-#   Restricted network:  No GitHub access, but ForgeAI backend is reachable.
+#   Restricted network:  No GitHub access, but FilterREX backend is reachable.
 #                        Use --enroll-token as normal; enrollment happens on first start.
 #
 #   Fully disconnected:  No outbound connectivity at install time.
 #                        Pre-populate connector.env with a persistent connector token
-#                        (fgc_...) or use a pre-seeded config artifact. See README-offline.md.
+#                        (frc_...) or use a pre-seeded config artifact. See README-offline.md.
 #
 # Usage:
-#   sudo bash install-offline.sh --enroll-token 'fgbt_...'
-#   sudo bash install-offline.sh --enroll-token 'fgbt_...' --verify
+#   sudo bash install-offline.sh --enroll-token 'frbt_...'
+#   sudo bash install-offline.sh --enroll-token 'frbt_...' --verify
 #   sudo bash install-offline.sh --verify    # verify bundle integrity only, no install
 #
 # The binary in this bundle is named 'connector-agent'. The installer copies it
-# to /usr/local/bin/forgeai-host (the production binary name used by the systemd
+# to /usr/local/bin/filterrex-connector (the production binary name used by the systemd
 # unit and all documentation).
 
 set -euo pipefail
@@ -32,8 +32,8 @@ ENROLLMENT_TOKEN=""
 CONNECTOR_TOKEN=""
 HOST_LABEL=""
 INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="/etc/forgeai"
-SERVICE_USER="forgeai"
+CONFIG_DIR="/etc/filterrex"
+SERVICE_USER="filterrex"
 FORCE_RESET_STATE=false
 REMOTE_LIVE_QUERY=false
 REMOTE_RESTART=false
@@ -92,7 +92,7 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
     # Check for a pre-seeded connector.env with a valid token (fully disconnected path)
     PRESEEDED_TOKEN=""
     if [ -f "${CONFIG_DIR}/connector.env" ]; then
-      PRESEEDED_TOKEN=$(grep -E '^\s*(FORGEAI_ENROLLMENT_TOKEN|CONNECTOR_TOKEN)\s*=' \
+      PRESEEDED_TOKEN=$(grep -E '^\s*(FILTERREX_ENROLLMENT_TOKEN|CONNECTOR_TOKEN)\s*=' \
         "${CONFIG_DIR}/connector.env" 2>/dev/null \
         | head -1 | sed 's/^[^=]*=//' | xargs)
     fi
@@ -103,10 +103,10 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
       echo "Error: an authentication token is required for new installations."
       echo ""
       echo "  Restricted network (backend reachable):"
-      echo "    --enroll-token 'fgbt_...'   Bootstrap enrollment token from the ForgeAI dashboard."
+      echo "    --enroll-token 'frbt_...'   Bootstrap enrollment token from the FilterREX dashboard."
       echo ""
       echo "  Fully disconnected (no backend at install time):"
-      echo "    --token 'fgc_...'           Pre-provisioned persistent connector token."
+      echo "    --token 'frc_...'           Pre-provisioned persistent connector token."
       echo "    Or pre-populate ${CONFIG_DIR}/connector.env before running this installer."
       echo "    See README-offline.md for fully disconnected setup instructions."
       exit 1
@@ -115,14 +115,14 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
 fi
 
 # Warn on likely token-type misuse
-if [ -n "$ENROLLMENT_TOKEN" ] && [[ "$ENROLLMENT_TOKEN" == fgc_* ]]; then
-  echo "⚠️  Warning: --enroll-token value starts with 'fgc_', which looks like a persistent"
-  echo "   connector token. Enrollment tokens typically start with 'fgbt_'."
+if [ -n "$ENROLLMENT_TOKEN" ] && [[ "$ENROLLMENT_TOKEN" == frc_* ]]; then
+  echo "⚠️  Warning: --enroll-token value starts with 'frc_', which looks like a persistent"
+  echo "   connector token. Enrollment tokens typically start with 'frbt_'."
   echo ""
 fi
 
-if [ -n "$CONNECTOR_TOKEN" ] && [[ "$CONNECTOR_TOKEN" == fgbt_* ]]; then
-  echo "⚠️  Warning: --token value starts with 'fgbt_', which looks like a bootstrap enrollment"
+if [ -n "$CONNECTOR_TOKEN" ] && [[ "$CONNECTOR_TOKEN" == frbt_* ]]; then
+  echo "⚠️  Warning: --token value starts with 'frbt_', which looks like a bootstrap enrollment"
   echo "   token. Use --enroll-token instead for enrollment mode."
   echo ""
 fi
@@ -137,7 +137,7 @@ if [ ! -f "$BINARY_PATH" ]; then
 fi
 
 echo "╔══════════════════════════════════════════════════════╗"
-echo "║  ForgeAI Connector Host — Offline Installer           ║"
+echo "║  FilterREX Connector Host — Offline Installer           ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo ""
 
@@ -179,20 +179,20 @@ fi
 
 # ── Stop existing service before replacing binary ──
 
-if systemctl is-active --quiet forgeai-host 2>/dev/null; then
+if systemctl is-active --quiet filterrex-connector 2>/dev/null; then
   echo "→ Stopping existing host service..."
-  sudo systemctl stop forgeai-host
+  sudo systemctl stop filterrex-connector
 fi
 
 # ── Install binary ──
-# Bundle binary is named 'connector-agent'; production name is 'forgeai-host'.
+# Bundle binary is named 'connector-agent'; production name is 'filterrex-connector'.
 
-echo "→ Installing binary to ${INSTALL_DIR}/forgeai-host..."
-sudo cp "${BINARY_PATH}" "${INSTALL_DIR}/forgeai-host"
-sudo chmod +x "${INSTALL_DIR}/forgeai-host"
+echo "→ Installing binary to ${INSTALL_DIR}/filterrex-connector..."
+sudo cp "${BINARY_PATH}" "${INSTALL_DIR}/filterrex-connector"
+sudo chmod +x "${INSTALL_DIR}/filterrex-connector"
 
 # Backward-compatible symlink
-sudo ln -sf "${INSTALL_DIR}/forgeai-host" "${INSTALL_DIR}/forgeai-connector"
+sudo ln -sf "${INSTALL_DIR}/filterrex-connector" "${INSTALL_DIR}/filterrex-connector"
 
 # ── Create service user ──
 
@@ -217,11 +217,11 @@ if [ "$EXISTING_INSTALL" = false ]; then
   if [ -n "$ENROLLMENT_TOKEN" ]; then
     echo "→ Writing configuration (enrollment token)..."
     cat <<EOF | sudo tee "${CONFIG_DIR}/connector.env" > /dev/null
-FORGEAI_ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
+FILTERREX_ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
 CONFIG_DIR=${CONFIG_DIR}
 HOST_LABEL=${HOST_LABEL}
-FORGEAI_REMOTE_LIVE_QUERY=${REMOTE_LIVE_QUERY}
-FORGEAI_REMOTE_RESTART=${REMOTE_RESTART}
+FILTERREX_REMOTE_LIVE_QUERY=${REMOTE_LIVE_QUERY}
+FILTERREX_REMOTE_RESTART=${REMOTE_RESTART}
 EOF
     sudo chmod 600 "${CONFIG_DIR}/connector.env"
     sudo chown "$SERVICE_USER":"$SERVICE_USER" "${CONFIG_DIR}/connector.env"
@@ -231,8 +231,8 @@ EOF
 CONNECTOR_TOKEN=${CONNECTOR_TOKEN}
 CONFIG_DIR=${CONFIG_DIR}
 HOST_LABEL=${HOST_LABEL}
-FORGEAI_REMOTE_LIVE_QUERY=${REMOTE_LIVE_QUERY}
-FORGEAI_REMOTE_RESTART=${REMOTE_RESTART}
+FILTERREX_REMOTE_LIVE_QUERY=${REMOTE_LIVE_QUERY}
+FILTERREX_REMOTE_RESTART=${REMOTE_RESTART}
 EOF
     sudo chmod 600 "${CONFIG_DIR}/connector.env"
     sudo chown "$SERVICE_USER":"$SERVICE_USER" "${CONFIG_DIR}/connector.env"
@@ -248,13 +248,13 @@ fi
 # ── Install systemd unit ──
 
 echo "→ Installing systemd service..."
-UNIT_SOURCE="${SCRIPT_DIR}/forgeai-host.service"
+UNIT_SOURCE="${SCRIPT_DIR}/filterrex-connector.service"
 if [ -f "$UNIT_SOURCE" ]; then
   # Substitute paths if non-default
-  sudo cp "$UNIT_SOURCE" /etc/systemd/system/forgeai-host.service
-  sudo sed -i "s|EnvironmentFile=.*|EnvironmentFile=${CONFIG_DIR}/connector.env|" /etc/systemd/system/forgeai-host.service
-  sudo sed -i "s|ExecStart=.*|ExecStart=${INSTALL_DIR}/forgeai-host|" /etc/systemd/system/forgeai-host.service
-  sudo sed -i "s|ReadWritePaths=.*|ReadWritePaths=${CONFIG_DIR}|" /etc/systemd/system/forgeai-host.service
+  sudo cp "$UNIT_SOURCE" /etc/systemd/system/filterrex-connector.service
+  sudo sed -i "s|EnvironmentFile=.*|EnvironmentFile=${CONFIG_DIR}/connector.env|" /etc/systemd/system/filterrex-connector.service
+  sudo sed -i "s|ExecStart=.*|ExecStart=${INSTALL_DIR}/filterrex-connector|" /etc/systemd/system/filterrex-connector.service
+  sudo sed -i "s|ReadWritePaths=.*|ReadWritePaths=${CONFIG_DIR}|" /etc/systemd/system/filterrex-connector.service
 else
   echo "❌ Bundled service unit not found: ${UNIT_SOURCE}"
   echo "   The offline bundle appears incomplete or corrupted."
@@ -264,35 +264,35 @@ fi
 
 # ── Migrate from legacy single-target service ──
 
-if systemctl is-enabled --quiet forgeai-connector 2>/dev/null; then
+if systemctl is-enabled --quiet filterrex-connector 2>/dev/null; then
   echo "→ Migrating from legacy single-target service..."
-  sudo systemctl stop forgeai-connector 2>/dev/null || true
-  sudo systemctl disable forgeai-connector 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/forgeai-connector.service
+  sudo systemctl stop filterrex-connector 2>/dev/null || true
+  sudo systemctl disable filterrex-connector 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/filterrex-connector.service
 fi
 
 # ── Enable and start ──
 
 echo "→ Starting connector host..."
 sudo systemctl daemon-reload
-sudo systemctl enable forgeai-host
-sudo systemctl restart forgeai-host
+sudo systemctl enable filterrex-connector
+sudo systemctl restart filterrex-connector
 
 echo ""
-echo "✅ ForgeAI Connector Host installed from offline bundle!"
-echo "   Binary:     ${INSTALL_DIR}/forgeai-host"
+echo "✅ FilterREX Connector Host installed from offline bundle!"
+echo "   Binary:     ${INSTALL_DIR}/filterrex-connector"
 echo "   Config dir: ${CONFIG_DIR}"
 echo "   Version:    ${BINARY_VERSION}"
 echo ""
 echo "Useful commands:"
-echo "  Status:    sudo systemctl status forgeai-host"
-echo "  Logs:      sudo journalctl -u forgeai-host -f"
-echo "  Stop:      sudo systemctl stop forgeai-host"
+echo "  Status:    sudo systemctl status filterrex-connector"
+echo "  Logs:      sudo journalctl -u filterrex-connector -f"
+echo "  Stop:      sudo systemctl stop filterrex-connector"
 echo ""
 if [ -n "$ENROLLMENT_TOKEN" ]; then
-  echo "The host will enroll with the ForgeAI backend on first start."
-  echo "After enrollment, manage targets from the ForgeAI dashboard."
+  echo "The host will enroll with the FilterREX backend on first start."
+  echo "After enrollment, manage targets from the FilterREX dashboard."
 elif [ -n "$CONNECTOR_TOKEN" ]; then
   echo "The host is configured with a pre-provisioned connector token."
-  echo "Targets are managed from the ForgeAI dashboard."
+  echo "Targets are managed from the FilterREX dashboard."
 fi

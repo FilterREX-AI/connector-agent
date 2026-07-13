@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Local Authoritative SQLite Database
+// FilterREX Connector Host — Local Authoritative SQLite Database
 //
 // Implements the local authoritative store for Hybrid Mode.
 // Snapshot payloads are encrypted at rest using the Store's AES-256-GCM key.

@@ -1,22 +1,22 @@
-# ForgeAI Connector Host — Docker Compose
+# FilterREX Connector Host — Docker Compose
 #
 # The Connector Host manages multiple targets from a single container.
-# Enroll with a token, then assign targets from the ForgeAI dashboard.
+# Enroll with a token, then assign targets from the FilterREX dashboard.
 #
 # Usage:
-#   FORGEAI_ENROLLMENT_TOKEN=fgbt_... docker compose up -d
+#   FILTERREX_ENROLLMENT_TOKEN=frbt_... docker compose up -d
 #
 # Security hardening:
-#   - read_only root filesystem (writes only to /etc/forgeai volume + /tmp tmpfs)
+#   - read_only root filesystem (writes only to /etc/filterrex volume + /tmp tmpfs)
 #   - All Linux capabilities dropped
 #   - No privilege escalation allowed
 #   - No Docker socket access
 
 services:
-  forgeai-host:
+  filterrex-connector:
     image: ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
     pull_policy: always
-    container_name: forgeai-host
+    container_name: filterrex-connector
     restart: unless-stopped
 
     # ── Networking ──
@@ -37,15 +37,15 @@ services:
 
     volumes:
       # Persist encrypted host state across container restarts
-      - forgeai-config:/etc/forgeai
+      - filterrex-config:/etc/filterrex
     environment:
       # Required: Enrollment token from /account/local-systems
-      FORGEAI_ENROLLMENT_TOKEN: "${FORGEAI_ENROLLMENT_TOKEN}"
+      FILTERREX_ENROLLMENT_TOKEN: "${FILTERREX_ENROLLMENT_TOKEN}"
 
       # ── Remote actions (opt-in, both disabled by default) ──
-      # FORGEAI_REMOTE_LIVE_QUERY: "true"   # Enable Live Query relay from dashboard
-      # FORGEAI_REMOTE_RESTART: "true"       # Enable remote agent restart from dashboard
+      # FILTERREX_REMOTE_LIVE_QUERY: "true"   # Enable Live Query relay from dashboard
+      # FILTERREX_REMOTE_RESTART: "true"       # Enable remote agent restart from dashboard
 
 volumes:
-  forgeai-config:
+  filterrex-config:
     driver: local

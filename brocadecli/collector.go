@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forgeai/connector-agent/evidencebundle"
+	"github.com/filterrex-ai/connector-agent/evidencebundle"
 )
 
 // CollectOptions tunes capture behaviour. Zero values give safe defaults.

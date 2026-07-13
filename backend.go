@@ -1,6 +1,6 @@
-// ForgeAI Connector Host — Backend Communication
+// FilterREX Connector Host — Backend Communication
 //
-// Handles all communication with the ForgeAI control plane:
+// Handles all communication with the FilterREX control plane:
 //   - Heartbeat/snapshot delivery (per-target workers)
 //   - Host enrollment (enrollment.go calls this)
 //   - Desired-state fetch (sync manager polls this)
@@ -69,7 +69,7 @@ func resolveBackendBase(envValue string) (string, error) {
 }
 
 
-// BackendClient handles communication with the ForgeAI backend.
+// BackendClient handles communication with the FilterREX backend.
 type BackendClient struct {
 	BaseURL string
 	mu      sync.RWMutex

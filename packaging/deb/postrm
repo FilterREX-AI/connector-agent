@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# ForgeAI Connector Host — Post-remove
+# FilterREX Connector Host — Post-remove
 # Reloads systemd after unit file removal.
 # Config and user are only cleaned on purge.
 
@@ -17,13 +17,13 @@ case "$1" in
       systemctl daemon-reload >/dev/null 2>&1 || true
     fi
     # Remove config directory on purge
-    rm -rf /etc/forgeai
+    rm -rf /etc/filterrex
     # Remove service user on purge
-    if getent passwd forgeai >/dev/null 2>&1; then
-      userdel forgeai 2>/dev/null || true
+    if getent passwd filterrex >/dev/null 2>&1; then
+      userdel filterrex 2>/dev/null || true
     fi
-    if getent group forgeai >/dev/null 2>&1; then
-      groupdel forgeai 2>/dev/null || true
+    if getent group filterrex >/dev/null 2>&1; then
+      groupdel filterrex 2>/dev/null || true
     fi
     ;;
   upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)

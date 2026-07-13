@@ -1,26 +1,26 @@
 #!/bin/bash
-# ForgeAI Connector Host — Quick Install Script
+# FilterREX Connector Host — Quick Install Script
 #
 # Installs the connector host as a systemd service that can manage
 # multiple infrastructure targets simultaneously from a single host.
 #
 # Token types:
-#   fgbt_...  = Bootstrap enrollment token (temporary, used once to register the host)
-#   fgc_...   = Persistent connector token (issued by backend after enrollment)
+#   frbt_...  = Bootstrap enrollment token (temporary, used once to register the host)
+#   frc_...   = Persistent connector token (issued by backend after enrollment)
 #
 # Usage — Enrollment (recommended):
 #   curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-#     | bash -s -- --enroll-token 'fgbt_your_enrollment_token' \
+#     | bash -s -- --enroll-token 'frbt_your_enrollment_token' \
 #         --backend-url 'https://qugzesfapcdhiyrhegdx.supabase.co'
 #
 # Usage — Pinned version:
 #   curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-#     | bash -s -- --enroll-token 'fgbt_...' --version v0.7.1
+#     | bash -s -- --enroll-token 'frbt_...' --version v0.7.1
 #
 # Usage — Legacy mode (backward compatible, persistent connector token):
-#   curl -fsSL ... | bash -s -- --token 'fgc_...' --target-type 'proxmox' ...
+#   curl -fsSL ... | bash -s -- --token 'frc_...' --target-type 'proxmox' ...
 #
-# After enrollment, targets are managed remotely from the ForgeAI dashboard.
+# After enrollment, targets are managed remotely from the FilterREX dashboard.
 # No reinstall needed to add, update, or remove targets.
 
 set -euo pipefail
@@ -54,8 +54,8 @@ NUTANIX_PASSWORD=""
 INSECURE_SKIP_VERIFY="false"
 POLL_INTERVAL_SECONDS="30"
 INSTALL_DIR="/usr/local/bin"
-CONFIG_DIR="/etc/forgeai"
-SERVICE_USER="forgeai"
+CONFIG_DIR="/etc/filterrex"
+SERVICE_USER="filterrex"
 FORCE_RESET_STATE=false
 REMOTE_LIVE_QUERY=false
 REMOTE_RESTART=false
@@ -94,39 +94,39 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
   echo "Error: an authentication token is required."
   echo ""
   echo "  Enrollment (recommended):"
-  echo "    --enroll-token 'fgbt_...'   Bootstrap enrollment token from the ForgeAI dashboard."
+  echo "    --enroll-token 'frbt_...'   Bootstrap enrollment token from the FilterREX dashboard."
   echo "                                The host uses this once to register, then receives a"
   echo "                                persistent identity. Targets are managed remotely."
   echo ""
   echo "  Legacy (single-target, backward compatible):"
-  echo "    --token 'fgc_...'           Persistent connector token, requires --target-type."
+  echo "    --token 'frc_...'           Persistent connector token, requires --target-type."
   exit 1
 fi
 
 # Warn on likely token-type misuse
-if [ -n "$ENROLLMENT_TOKEN" ] && [[ "$ENROLLMENT_TOKEN" == fgc_* ]]; then
-  echo "⚠️  Warning: --enroll-token value starts with 'fgc_', which looks like a persistent"
-  echo "   connector token. Enrollment tokens typically start with 'fgbt_'."
+if [ -n "$ENROLLMENT_TOKEN" ] && [[ "$ENROLLMENT_TOKEN" == frc_* ]]; then
+  echo "⚠️  Warning: --enroll-token value starts with 'frc_', which looks like a persistent"
+  echo "   connector token. Enrollment tokens typically start with 'frbt_'."
   echo "   Continuing, but enrollment may fail if the token type is wrong."
   echo ""
 fi
 
-if [ -n "$CONNECTOR_TOKEN" ] && [[ "$CONNECTOR_TOKEN" == fgbt_* ]]; then
-  echo "⚠️  Warning: --token value starts with 'fgbt_', which looks like a bootstrap enrollment"
-  echo "   token. Legacy --token expects a persistent connector token (fgc_...)."
+if [ -n "$CONNECTOR_TOKEN" ] && [[ "$CONNECTOR_TOKEN" == frbt_* ]]; then
+  echo "⚠️  Warning: --token value starts with 'frbt_', which looks like a bootstrap enrollment"
+  echo "   token. Legacy --token expects a persistent connector token (frc_...)."
   echo "   Use --enroll-token instead for enrollment mode."
   echo ""
 fi
 
 echo "╔══════════════════════════════════════════════╗"
-echo "║  ForgeAI Connector Host — Installer           ║"
+echo "║  FilterREX Connector Host — Installer           ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
 
 if [ -n "$ENROLLMENT_TOKEN" ]; then
   echo "→ Mode: Host enrollment (bootstrap)"
   echo "  The host will self-register with the backend using the enrollment token."
-  echo "  After enrollment, targets are assigned from the ForgeAI dashboard."
+  echo "  After enrollment, targets are assigned from the FilterREX dashboard."
 else
   echo "→ Mode: Legacy single-target (persistent connector token)"
 fi
@@ -169,7 +169,7 @@ if [ -f "${CONFIG_DIR}/host.json.enc" ] || [ -f "${CONFIG_DIR}/host.key" ]; then
   echo ""
   echo "  Config dir: ${CONFIG_DIR}"
   echo "  The host will reuse its existing enrollment identity and connector token."
-  echo "  Any FORGEAI_ENROLLMENT_TOKEN provided will NOT be used for a new enrollment."
+  echo "  Any FILTERREX_ENROLLMENT_TOKEN provided will NOT be used for a new enrollment."
   echo ""
   echo "  If the stored connector token is invalid or revoked (e.g. the host"
   echo "  registration was deleted from the dashboard), desired-state sync will fail."
@@ -270,7 +270,7 @@ if [ -n "$TARGET_TYPE" ]; then
       echo "             generic-http, pure-storage, netapp-ontap, powerstore, powermax, powerflex"
       echo ""
       echo "  Tip: Use --enroll-token instead of --token to enroll a multi-target host."
-      echo "  Targets are then assigned remotely from the ForgeAI dashboard."
+      echo "  Targets are then assigned remotely from the FilterREX dashboard."
       exit 1
       ;;
   esac
@@ -347,15 +347,15 @@ if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "000" ]; then
   echo ""
   echo "  Use Docker to run the Connector Host without a binary release:"
   echo ""
-  echo "    docker run -d --name forgeai-host \\"
+  echo "    docker run -d --name filterrex-connector \\"
   echo "      --pull always \\"
   echo "      --restart unless-stopped \\"
-  echo "      -v forgeai-config:/etc/forgeai \\"
+  echo "      -v filterrex-config:/etc/filterrex \\"
   echo "      -e BACKEND_URL='${BACKEND_URL}' \\"
   if [ -n "$ENROLLMENT_TOKEN" ]; then
-    echo "      -e FORGEAI_ENROLLMENT_TOKEN='<your_fgbt_token>' \\"
+    echo "      -e FILTERREX_ENROLLMENT_TOKEN='<your_frbt_token>' \\"
   else
-    echo "      -e CONNECTOR_TOKEN='<your_fgc_token>' \\"
+    echo "      -e CONNECTOR_TOKEN='<your_frc_token>' \\"
   fi
   [ -n "$HOST_LABEL" ] && echo "      -e HOST_LABEL='${HOST_LABEL}' \\"
   [ -n "$TARGET_TYPE" ] && echo "      -e TARGET_TYPE='${TARGET_TYPE}' \\"
@@ -382,10 +382,10 @@ if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "000" ]; then
   echo "  replace ':latest' with the desired version (e.g., ':v0.7.1')."
   echo ""
   echo "  If you prefer a bind mount instead of a named volume:"
-  echo "    sudo mkdir -p /etc/forgeai/secrets"
-  echo "    sudo chown -R 1000:1000 /etc/forgeai"
-  echo "    sudo chmod 700 /etc/forgeai /etc/forgeai/secrets"
-  echo "    # Then replace '-v forgeai-config:/etc/forgeai' with '-v /etc/forgeai:/etc/forgeai'"
+  echo "    sudo mkdir -p /etc/filterrex/secrets"
+  echo "    sudo chown -R 1000:1000 /etc/filterrex"
+  echo "    sudo chmod 700 /etc/filterrex /etc/filterrex/secrets"
+  echo "    # Then replace '-v filterrex-config:/etc/filterrex' with '-v /etc/filterrex:/etc/filterrex'"
   echo ""
   exit 1
 fi
@@ -404,19 +404,19 @@ chmod +x "/tmp/connector-agent-${OS}-${ARCH}"
 
 # ── Stop existing service before replacing binary ──
 
-if systemctl is-active --quiet forgeai-host 2>/dev/null; then
+if systemctl is-active --quiet filterrex-connector 2>/dev/null; then
   echo "→ Stopping existing host service..."
-  sudo systemctl stop forgeai-host
+  sudo systemctl stop filterrex-connector
 fi
 
 # ── Install binary ──
 
 echo "→ Installing to ${INSTALL_DIR}..."
-sudo mv "/tmp/connector-agent-${OS}-${ARCH}" "${INSTALL_DIR}/forgeai-host"
+sudo mv "/tmp/connector-agent-${OS}-${ARCH}" "${INSTALL_DIR}/filterrex-connector"
 rm -f "/tmp/${ASSET_NAME}"
 
 # Backward-compatible symlink
-sudo ln -sf "${INSTALL_DIR}/forgeai-host" "${INSTALL_DIR}/forgeai-connector"
+sudo ln -sf "${INSTALL_DIR}/filterrex-connector" "${INSTALL_DIR}/filterrex-connector"
 
 # ── Create service user ──
 
@@ -445,16 +445,16 @@ if [ "$EXISTING_INSTALL" = false ]; then
     # persistent connector identity from the backend after successful enrollment.
     cat <<EOF | sudo tee "${CONFIG_DIR}/connector.env" > /dev/null
 BACKEND_URL=${BACKEND_URL}
-FORGEAI_ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
+FILTERREX_ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
 CONFIG_DIR=${CONFIG_DIR}
 HOST_LABEL=${HOST_LABEL}
-FORGEAI_REMOTE_LIVE_QUERY=${REMOTE_LIVE_QUERY}
-FORGEAI_REMOTE_RESTART=${REMOTE_RESTART}
+FILTERREX_REMOTE_LIVE_QUERY=${REMOTE_LIVE_QUERY}
+FILTERREX_REMOTE_RESTART=${REMOTE_RESTART}
 EOF
 
     # If initial target settings are provided, store them as bootstrap hints.
     # These help the host register its first target during enrollment, but
-    # ongoing target management happens via the ForgeAI dashboard.
+    # ongoing target management happens via the FilterREX dashboard.
     if [ -n "$TARGET_TYPE" ]; then
       cat <<EOF | sudo tee -a "${CONFIG_DIR}/connector.env" > /dev/null
 INITIAL_TARGET_TYPE=${TARGET_TYPE}
@@ -503,9 +503,9 @@ fi
 # ── Create systemd unit ──
 
 echo "→ Creating systemd service..."
-cat <<EOF | sudo tee /etc/systemd/system/forgeai-host.service > /dev/null
+cat <<EOF | sudo tee /etc/systemd/system/filterrex-connector.service > /dev/null
 [Unit]
-Description=ForgeAI Connector Host
+Description=FilterREX Connector Host
 After=network-online.target
 Wants=network-online.target
 
@@ -513,7 +513,7 @@ Wants=network-online.target
 Type=simple
 User=${SERVICE_USER}
 EnvironmentFile=${CONFIG_DIR}/connector.env
-ExecStart=${INSTALL_DIR}/forgeai-host
+ExecStart=${INSTALL_DIR}/filterrex-connector
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -532,25 +532,25 @@ EOF
 
 # ── Migrate from legacy single-target service ──
 
-if systemctl is-enabled --quiet forgeai-connector 2>/dev/null; then
+if systemctl is-enabled --quiet filterrex-connector 2>/dev/null; then
   echo "→ Migrating from legacy single-target service..."
-  sudo systemctl stop forgeai-connector 2>/dev/null || true
-  sudo systemctl disable forgeai-connector 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/forgeai-connector.service
+  sudo systemctl stop filterrex-connector 2>/dev/null || true
+  sudo systemctl disable filterrex-connector 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/filterrex-connector.service
 fi
 
 # ── Enable and start ──
 
 echo "→ Starting connector host..."
 sudo systemctl daemon-reload
-sudo systemctl enable forgeai-host
-sudo systemctl restart forgeai-host
+sudo systemctl enable filterrex-connector
+sudo systemctl restart filterrex-connector
 
 echo ""
-echo "✅ ForgeAI Connector Host installed and running!"
+echo "✅ FilterREX Connector Host installed and running!"
 if [ -n "$ENROLLMENT_TOKEN" ]; then
   echo "   Mode: Enrollment (host will self-register with backend)"
-  echo "   After enrollment, manage targets from the ForgeAI dashboard."
+  echo "   After enrollment, manage targets from the FilterREX dashboard."
 fi
 if [ -n "$TARGET_TYPE" ]; then
   echo "   Initial target hint: ${TARGET_TYPE} (will be registered during enrollment)"
@@ -563,9 +563,9 @@ fi
 echo "   Config dir: ${CONFIG_DIR}"
 echo ""
 echo "Useful commands:"
-echo "  Status:    sudo systemctl status forgeai-host"
-echo "  Logs:      sudo journalctl -u forgeai-host -f"
-echo "  Stop:      sudo systemctl stop forgeai-host"
-echo "  Uninstall: sudo systemctl stop forgeai-host && sudo systemctl disable forgeai-host && sudo rm ${INSTALL_DIR}/forgeai-host /etc/systemd/system/forgeai-host.service && sudo rm -rf ${CONFIG_DIR}"
+echo "  Status:    sudo systemctl status filterrex-connector"
+echo "  Logs:      sudo journalctl -u filterrex-connector -f"
+echo "  Stop:      sudo systemctl stop filterrex-connector"
+echo "  Uninstall: sudo systemctl stop filterrex-connector && sudo systemctl disable filterrex-connector && sudo rm ${INSTALL_DIR}/filterrex-connector /etc/systemd/system/filterrex-connector.service && sudo rm -rf ${CONFIG_DIR}"
 echo ""
-echo "Targets are managed from the ForgeAI dashboard — no reinstall needed."
+echo "Targets are managed from the FilterREX dashboard — no reinstall needed."

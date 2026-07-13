@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Structured Audit Logger
+// FilterREX Connector Host — Structured Audit Logger
 //
 // Provides machine-parseable JSON audit logging with severity levels,
 // event taxonomy, and consistent field schemas. Designed for log

@@ -1,4 +1,4 @@
-module github.com/forgeai/connector-agent
+module github.com/filterrex-ai/connector-agent
 
 go 1.22
 

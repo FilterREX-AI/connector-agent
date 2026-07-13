@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Core Types
+// FilterREX Connector Host — Core Types
 //
 // Defines the host identity, target profile schema, worker state,
 // target-specific config extension points, and generic-http guardrails.
@@ -21,7 +21,7 @@ type HostIdentity struct {
 	HostID         string    `json:"host_id"`          // UUID assigned at enrollment
 	Label          string    `json:"label"`             // Human-friendly name
 	EnrolledAt     time.Time `json:"enrolled_at"`
-	ConnectorToken string    `json:"connector_token"`   // fgc_... token for backend auth
+	ConnectorToken string    `json:"connector_token"`   // frc_... token for backend auth
 	BackendURL     string    `json:"backend_url"`
 	PublicKey      string    `json:"public_key,omitempty"` // base64 NaCl public key
 }

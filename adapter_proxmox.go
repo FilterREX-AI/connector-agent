@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Proxmox Adapter (bridge)
+// FilterREX Connector Host — Proxmox Adapter (bridge)
 //
 // Wraps the existing ProxmoxClient to conform to the TargetAdapter interface.
 // The actual Proxmox API logic remains in proxmox.go.

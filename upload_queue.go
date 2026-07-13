@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Snapshot Upload Queue
+// FilterREX Connector Host — Snapshot Upload Queue
 //
 // Decouples collection from upload with a bounded in-memory queue,
 // async uploader worker(s), retry with backoff, and priority-based

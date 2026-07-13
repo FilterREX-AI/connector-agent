@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Change Operation Policy
+// FilterREX Connector Host — Change Operation Policy
 //
 // Implements a policy-based authorization model for remote change operations.
 // Three modes:
@@ -7,8 +7,8 @@
 //   - all                — all change-level ops permitted (lab/advanced)
 //
 // Configuration via environment variables:
-//   FORGEAI_REMOTE_CHANGE_POLICY=deny|explicit|all
-//   FORGEAI_REMOTE_ALLOWED_CHANGE_OPS=idrac-power-on,idrac-graceful-shutdown
+//   FILTERREX_REMOTE_CHANGE_POLICY=deny|explicit|all
+//   FILTERREX_REMOTE_ALLOWED_CHANGE_OPS=idrac-power-on,idrac-graceful-shutdown
 
 package main
 
@@ -45,7 +45,7 @@ func DefaultChangePolicyConfig() ChangePolicyConfig {
 func ParseChangePolicyFromEnv() ChangePolicyConfig {
 	cfg := DefaultChangePolicyConfig()
 
-	policyStr := strings.ToLower(strings.TrimSpace(os.Getenv("FORGEAI_REMOTE_CHANGE_POLICY")))
+	policyStr := strings.ToLower(strings.TrimSpace(os.Getenv("FILTERREX_REMOTE_CHANGE_POLICY")))
 	switch policyStr {
 	case "explicit":
 		cfg.Policy = ChangePolicyExplicit
@@ -55,13 +55,13 @@ func ParseChangePolicyFromEnv() ChangePolicyConfig {
 		cfg.Policy = ChangePolicyDeny
 	default:
 		// Unknown value — default to deny for safety
-		audit.Warn("change_policy.parse", "Unknown FORGEAI_REMOTE_CHANGE_POLICY value, defaulting to deny",
+		audit.Warn("change_policy.parse", "Unknown FILTERREX_REMOTE_CHANGE_POLICY value, defaulting to deny",
 			F("raw_value", policyStr))
 		cfg.Policy = ChangePolicyDeny
 	}
 
 	// Parse allowlist
-	rawOps := os.Getenv("FORGEAI_REMOTE_ALLOWED_CHANGE_OPS")
+	rawOps := os.Getenv("FILTERREX_REMOTE_ALLOWED_CHANGE_OPS")
 	if rawOps != "" {
 		seen := map[string]bool{}
 		for _, op := range strings.Split(rawOps, ",") {
@@ -82,7 +82,7 @@ func ParseChangePolicyFromEnv() ChangePolicyConfig {
 func (c *ChangePolicyConfig) IsChangeOpAllowed(operationID string) (bool, string) {
 	switch c.Policy {
 	case ChangePolicyDeny:
-		return false, "remote change operations disabled by policy (FORGEAI_REMOTE_CHANGE_POLICY=deny)"
+		return false, "remote change operations disabled by policy (FILTERREX_REMOTE_CHANGE_POLICY=deny)"
 	case ChangePolicyAll:
 		return true, ""
 	case ChangePolicyExplicit:
@@ -92,7 +92,7 @@ func (c *ChangePolicyConfig) IsChangeOpAllowed(operationID string) (bool, string
 		if c.AllowedOps[operationID] {
 			return true, ""
 		}
-		return false, "change operation \"" + operationID + "\" not allowlisted on agent (FORGEAI_REMOTE_ALLOWED_CHANGE_OPS)"
+		return false, "change operation \"" + operationID + "\" not allowlisted on agent (FILTERREX_REMOTE_ALLOWED_CHANGE_OPS)"
 	default:
 		return false, "unknown change policy"
 	}

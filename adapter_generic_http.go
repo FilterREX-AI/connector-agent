@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Generic HTTP Adapter (read-only, sandboxed)
+// FilterREX Connector Host — Generic HTTP Adapter (read-only, sandboxed)
 //
 // The most constrained adapter. Enforces hard guardrails:
 //   - Methods: GET / HEAD / OPTIONS only

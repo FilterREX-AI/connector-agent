@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — MikroTik SwOS Adapter (read-only)
+// FilterREX Connector Host — MikroTik SwOS Adapter (read-only)
 //
 // Collects system, port, switching, VLAN, LAG, RSTP, SFP, PoE,
 // forwarding, and health data from MikroTik SwOS devices via
@@ -211,7 +211,7 @@ func (a *MikroTikSwOSAdapter) swosFormLogin() error {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 		req.Header.Set("Referer", a.baseURL+"/")
-		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ForgeAI/1.0)")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; FilterREX/1.0)")
 
 		resp, err := a.client.Do(req)
 		if err != nil {
@@ -371,7 +371,7 @@ func (a *MikroTikSwOSAdapter) doSwOSRequest(method, path string, body []byte, co
 	}
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Referer", a.baseURL+"/")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ForgeAI/1.0)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; FilterREX/1.0)")
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

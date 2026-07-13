@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Change Policy Unit Tests
+// FilterREX Connector Host — Change Policy Unit Tests
 
 package main
 
@@ -85,10 +85,10 @@ func TestAllPolicyAllowsEverything(t *testing.T) {
 }
 
 func TestParseFromEnv_Deny(t *testing.T) {
-	os.Setenv("FORGEAI_REMOTE_CHANGE_POLICY", "deny")
-	os.Setenv("FORGEAI_REMOTE_ALLOWED_CHANGE_OPS", "")
-	defer os.Unsetenv("FORGEAI_REMOTE_CHANGE_POLICY")
-	defer os.Unsetenv("FORGEAI_REMOTE_ALLOWED_CHANGE_OPS")
+	os.Setenv("FILTERREX_REMOTE_CHANGE_POLICY", "deny")
+	os.Setenv("FILTERREX_REMOTE_ALLOWED_CHANGE_OPS", "")
+	defer os.Unsetenv("FILTERREX_REMOTE_CHANGE_POLICY")
+	defer os.Unsetenv("FILTERREX_REMOTE_ALLOWED_CHANGE_OPS")
 
 	cfg := ParseChangePolicyFromEnv()
 	if cfg.Policy != ChangePolicyDeny {
@@ -97,10 +97,10 @@ func TestParseFromEnv_Deny(t *testing.T) {
 }
 
 func TestParseFromEnv_Explicit(t *testing.T) {
-	os.Setenv("FORGEAI_REMOTE_CHANGE_POLICY", "explicit")
-	os.Setenv("FORGEAI_REMOTE_ALLOWED_CHANGE_OPS", "idrac-power-on, idrac-graceful-shutdown ,, idrac-power-on")
-	defer os.Unsetenv("FORGEAI_REMOTE_CHANGE_POLICY")
-	defer os.Unsetenv("FORGEAI_REMOTE_ALLOWED_CHANGE_OPS")
+	os.Setenv("FILTERREX_REMOTE_CHANGE_POLICY", "explicit")
+	os.Setenv("FILTERREX_REMOTE_ALLOWED_CHANGE_OPS", "idrac-power-on, idrac-graceful-shutdown ,, idrac-power-on")
+	defer os.Unsetenv("FILTERREX_REMOTE_CHANGE_POLICY")
+	defer os.Unsetenv("FILTERREX_REMOTE_ALLOWED_CHANGE_OPS")
 
 	cfg := ParseChangePolicyFromEnv()
 	if cfg.Policy != ChangePolicyExplicit {
@@ -118,8 +118,8 @@ func TestParseFromEnv_Explicit(t *testing.T) {
 }
 
 func TestParseFromEnv_All(t *testing.T) {
-	os.Setenv("FORGEAI_REMOTE_CHANGE_POLICY", "ALL")
-	defer os.Unsetenv("FORGEAI_REMOTE_CHANGE_POLICY")
+	os.Setenv("FILTERREX_REMOTE_CHANGE_POLICY", "ALL")
+	defer os.Unsetenv("FILTERREX_REMOTE_CHANGE_POLICY")
 
 	cfg := ParseChangePolicyFromEnv()
 	if cfg.Policy != ChangePolicyAll {
@@ -128,8 +128,8 @@ func TestParseFromEnv_All(t *testing.T) {
 }
 
 func TestParseFromEnv_UnknownDefaultsDeny(t *testing.T) {
-	os.Setenv("FORGEAI_REMOTE_CHANGE_POLICY", "yolo")
-	defer os.Unsetenv("FORGEAI_REMOTE_CHANGE_POLICY")
+	os.Setenv("FILTERREX_REMOTE_CHANGE_POLICY", "yolo")
+	defer os.Unsetenv("FILTERREX_REMOTE_CHANGE_POLICY")
 
 	cfg := ParseChangePolicyFromEnv()
 	if cfg.Policy != ChangePolicyDeny {
@@ -138,8 +138,8 @@ func TestParseFromEnv_UnknownDefaultsDeny(t *testing.T) {
 }
 
 func TestParseFromEnv_EmptyDefaultsDeny(t *testing.T) {
-	os.Unsetenv("FORGEAI_REMOTE_CHANGE_POLICY")
-	os.Unsetenv("FORGEAI_REMOTE_ALLOWED_CHANGE_OPS")
+	os.Unsetenv("FILTERREX_REMOTE_CHANGE_POLICY")
+	os.Unsetenv("FILTERREX_REMOTE_ALLOWED_CHANGE_OPS")
 
 	cfg := ParseChangePolicyFromEnv()
 	if cfg.Policy != ChangePolicyDeny {

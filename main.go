@@ -1,19 +1,19 @@
-// ForgeAI Connector Host — Entrypoint
+// FilterREX Connector Host — Entrypoint
 //
 // The Connector Host is a long-running supervisor process that manages
 // per-target workers. It supports:
 //   - Secure host enrollment with bootstrap token
-//   - Desired-state sync from ForgeAI backend
+//   - Desired-state sync from FilterREX backend
 //   - Multiple concurrent targets (proxmox, truenas, etc.)
 //   - Independent worker lifecycle per target
 //   - Encrypted local config/secret storage
 //   - Legacy single-target env-var mode for backward compatibility
 //
 // Usage (Enrollment — recommended):
-//   FORGEAI_ENROLLMENT_TOKEN=fgbt_... ./connector-agent
+//   FILTERREX_ENROLLMENT_TOKEN=frbt_... ./connector-agent
 //
 // Usage (Legacy mode — single target via env vars):
-//   CONNECTOR_TOKEN=fgc_... TARGET_TYPE=proxmox PROXMOX_BASE_URL=... ./connector-agent
+//   CONNECTOR_TOKEN=frc_... TARGET_TYPE=proxmox PROXMOX_BASE_URL=... ./connector-agent
 
 package main
 
@@ -34,7 +34,7 @@ func main() {
 	// Handle --version flag before any other initialization
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
-			fmt.Printf("ForgeAI Connector Host %s\n", HostVersion)
+			fmt.Printf("FilterREX Connector Host %s\n", HostVersion)
 			os.Exit(0)
 		}
 	}
@@ -58,15 +58,15 @@ func main() {
 	InitAuditLogger(configLevel)
 
 	execPath, _ := os.Executable()
-	audit.Info("host.startup", fmt.Sprintf("ForgeAI Connector Host v%s starting", HostVersion),
+	audit.Info("host.startup", fmt.Sprintf("FilterREX Connector Host v%s starting", HostVersion),
 		F("executable", execPath),
 		F("pid", os.Getpid()))
 
 	// ── Read remote action opt-in flags from environment ──
-	remoteLiveQuery := envBool("FORGEAI_REMOTE_LIVE_QUERY")
-	remoteRestart := envBool("FORGEAI_REMOTE_RESTART")
+	remoteLiveQuery := envBool("FILTERREX_REMOTE_LIVE_QUERY")
+	remoteRestart := envBool("FILTERREX_REMOTE_RESTART")
 	// Convenience flag: --enable-remote-actions sets both
-	if envBool("FORGEAI_REMOTE_ACTIONS") {
+	if envBool("FILTERREX_REMOTE_ACTIONS") {
 		remoteLiveQuery = true
 		remoteRestart = true
 	}
@@ -76,14 +76,14 @@ func main() {
 		configDir = defaultConfigDir
 	}
 
-	hybridMode := envBool("FORGEAI_HYBRID_MODE")
+	hybridMode := envBool("FILTERREX_HYBRID_MODE")
 	if hybridMode {
 		audit.Info("host.startup",
 			"Hybrid Mode enabled — local DB will be activated")
 	}
 
 	// ── Local API token — stable across restarts ──
-	localAPIToken := os.Getenv("FORGEAI_LOCAL_API_TOKEN")
+	localAPIToken := os.Getenv("FILTERREX_LOCAL_API_TOKEN")
 	if localAPIToken == "" && hybridMode {
 		// Try to load from persisted file first
 		tokenPath := filepath.Join(configDir, "local_api_token")
@@ -185,7 +185,7 @@ func main() {
 	supervisor.RegisterAdapter("mikrotik-swos", NewMikroTikSwOSAdapter)
 
 	// ── Enrollment / State Loading ──
-	enrollmentToken := os.Getenv("FORGEAI_ENROLLMENT_TOKEN")
+	enrollmentToken := os.Getenv("FILTERREX_ENROLLMENT_TOKEN")
 	legacyCfg := detectLegacyEnvConfig()
 
 	if enrollmentToken != "" {
@@ -226,7 +226,7 @@ func main() {
 				F("live_query", state.Config.RemoteLiveQueryEnabled),
 				F("restart", state.Config.RemoteRestartEnabled))
 		} else {
-			audit.Info("host.config_loaded", "Remote actions disabled (set FORGEAI_REMOTE_LIVE_QUERY=true and/or FORGEAI_REMOTE_RESTART=true to enable)")
+			audit.Info("host.config_loaded", "Remote actions disabled (set FILTERREX_REMOTE_LIVE_QUERY=true and/or FILTERREX_REMOTE_RESTART=true to enable)")
 		}
 
 		// Update audit logger level from persisted config
@@ -313,7 +313,7 @@ func main() {
 	if ldb := store.LocalDB(); ldb != nil {
 		localRelayHandler = NewRelayHandler(supervisor, backend, store, changePolicyConfig)
 
-		bind := os.Getenv("FORGEAI_LOCAL_API_BIND")
+		bind := os.Getenv("FILTERREX_LOCAL_API_BIND")
 		if bind == "" {
 			bind = defaultLocalAPIBind
 		}
@@ -494,13 +494,13 @@ func detectLegacyEnvConfig() *Config {
 		return nil
 	}
 
-	// If FORGEAI_ENROLLMENT_TOKEN is set, don't treat CONNECTOR_TOKEN as legacy
-	if os.Getenv("FORGEAI_ENROLLMENT_TOKEN") != "" {
+	// If FILTERREX_ENROLLMENT_TOKEN is set, don't treat CONNECTOR_TOKEN as legacy
+	if os.Getenv("FILTERREX_ENROLLMENT_TOKEN") != "" {
 		return nil
 	}
 
-	if !strings.HasPrefix(token, "fgc_") {
-		audit.Warn("host.config_loaded", "CONNECTOR_TOKEN does not start with fgc_")
+	if !strings.HasPrefix(token, "frc_") {
+		audit.Warn("host.config_loaded", "CONNECTOR_TOKEN does not start with frc_")
 	}
 
 	targetType := strings.ToLower(os.Getenv("TARGET_TYPE"))

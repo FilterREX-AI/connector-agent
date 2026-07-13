@@ -1,13 +1,13 @@
 [Unit]
-Description=ForgeAI Connector Host
+Description=FilterREX Connector Host
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=forgeai
-EnvironmentFile=/etc/forgeai/connector.env
-ExecStart=/usr/bin/forgeai-host
+User=filterrex
+EnvironmentFile=/etc/filterrex/connector.env
+ExecStart=/usr/bin/filterrex-connector
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -16,7 +16,7 @@ StandardError=journal
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/etc/forgeai
+ReadWritePaths=/etc/filterrex
 ProtectHome=true
 PrivateTmp=true
 

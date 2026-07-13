@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forgeai/connector-agent/evidencebundle"
+	"github.com/filterrex-ai/connector-agent/evidencebundle"
 )
 
 // dirBackedRunner is a fake runner that returns the exact captured command

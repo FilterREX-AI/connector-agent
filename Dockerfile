@@ -1,4 +1,4 @@
-# ForgeAI Connector Host — Dockerfile
+# FilterREX Connector Host — Dockerfile
 # Multi-stage build for minimal runtime image
 
 FROM golang:1.22-alpine AS builder
@@ -26,12 +26,12 @@ LABEL org.opencontainers.image.vendor="FilterREX-AI"
 # Non-root user + config directory
 # Create dirs BEFORE declaring VOLUME so ownership is baked into the image layer.
 # When Docker initializes an empty named volume it copies this layer's contents/perms.
-RUN adduser -D -u 1000 forgeai \
- && mkdir -p /etc/forgeai/secrets \
- && chown -R forgeai:forgeai /etc/forgeai
+RUN adduser -D -u 1000 filterrex \
+ && mkdir -p /etc/filterrex/secrets \
+ && chown -R filterrex:filterrex /etc/filterrex
 
-VOLUME /etc/forgeai
+VOLUME /etc/filterrex
 
-USER forgeai
+USER filterrex
 
 ENTRYPOINT ["connector-agent"]

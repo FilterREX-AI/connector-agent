@@ -1,6 +1,6 @@
-// ForgeAI Connector Host — Host Enrollment
+// FilterREX Connector Host — Host Enrollment
 //
-// Implements one-time host enrollment against the ForgeAI backend.
+// Implements one-time host enrollment against the FilterREX backend.
 // The host exchanges a bootstrap token for a persistent host identity
 // and connector token. Re-enrollment requires explicit operator action.
 
@@ -42,7 +42,7 @@ type EnrollmentResponse struct {
 
 // ── Enrollment logic ──
 
-// EnrollHost performs first-time host enrollment with the ForgeAI backend.
+// EnrollHost performs first-time host enrollment with the FilterREX backend.
 func EnrollHost(store *Store, backendURL, bootstrapToken, label string) (*HostState, error) {
 	// Guard: don't re-enroll if state already exists
 	existing, err := store.LoadState()
@@ -183,14 +183,14 @@ func MustEnroll(store *Store, backendURL string) (*HostState, error) {
 				F("enrolled_at", state.Identity.EnrolledAt.Format(time.RFC3339)))
 		}
 		audit.Info("enrollment.success", "Reusing existing host identity and connector token")
-		audit.Info("enrollment.success", "The FORGEAI_ENROLLMENT_TOKEN environment variable will NOT be used")
+		audit.Info("enrollment.success", "The FILTERREX_ENROLLMENT_TOKEN environment variable will NOT be used")
 		audit.Warn("enrollment.success", "If the stored token is invalid or revoked, desired-state sync will fail")
 		audit.Info("enrollment.success", "To force a clean re-enrollment, see --force-reset-state or manual reset steps")
 		return state, nil
 	}
 
 	// Check for enrollment token in env
-	bootstrapToken := os.Getenv("FORGEAI_ENROLLMENT_TOKEN")
+	bootstrapToken := os.Getenv("FILTERREX_ENROLLMENT_TOKEN")
 	if bootstrapToken == "" {
 		// Fall back to legacy CONNECTOR_TOKEN for backward compatibility
 		bootstrapToken = os.Getenv("CONNECTOR_TOKEN")
@@ -198,16 +198,16 @@ func MustEnroll(store *Store, backendURL string) (*HostState, error) {
 
 	if bootstrapToken == "" {
 		return nil, fmt.Errorf("host not enrolled and no enrollment token provided. " +
-			"Set FORGEAI_ENROLLMENT_TOKEN or run with --enroll-token")
+			"Set FILTERREX_ENROLLMENT_TOKEN or run with --enroll-token")
 	}
 
 	label := os.Getenv("HOST_LABEL")
 	if label == "" {
 		hostname, _ := os.Hostname()
 		if hostname != "" {
-			label = fmt.Sprintf("forgeai-host-%s", hostname)
+			label = fmt.Sprintf("filterrex-connector-%s", hostname)
 		} else {
-			label = "forgeai-host"
+			label = "filterrex-connector"
 		}
 	}
 

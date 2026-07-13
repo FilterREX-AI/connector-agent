@@ -1,4 +1,4 @@
-// ForgeAI Local Connector — TrueNAS Adapter
+// FilterREX Local Connector — TrueNAS Adapter
 //
 // Read-only TrueNAS SCALE / CORE API client that collects ZFS pool health,
 // datasets, snapshots, replication tasks, shares, and system alerts into

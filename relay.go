@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Relay Execution Handler
+// FilterREX Connector Host — Relay Execution Handler
 //
 // Handles live API relay commands received from the cloud via
 // the desired-state polling loop. The agent executes the operation
@@ -132,10 +132,10 @@ func (rh *RelayHandler) ProcessCommands(commands []RelayCommand) {
 		// System commands and ai-fabric probes bypass the live query gate —
 		// they have their own granular checks (or none, since they don't touch targets).
 		if cmd.Platform != "system" && cmd.Platform != "ai-fabric" && !liveQueryEnabled {
-			log.Printf("[relay] REJECTED cmd=%s: remote Live Query is disabled on this host (set FORGEAI_REMOTE_LIVE_QUERY=true to enable)", cmd.ID)
+			log.Printf("[relay] REJECTED cmd=%s: remote Live Query is disabled on this host (set FILTERREX_REMOTE_LIVE_QUERY=true to enable)", cmd.ID)
 			results = append(results, RelayResult{
 				ID:           cmd.ID,
-				ErrorMessage: "Remote Live Query is disabled on this host. Set FORGEAI_REMOTE_LIVE_QUERY=true or enable via host config.",
+				ErrorMessage: "Remote Live Query is disabled on this host. Set FILTERREX_REMOTE_LIVE_QUERY=true or enable via host config.",
 				DurationMs:   0,
 			})
 			continue

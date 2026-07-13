@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/forgeai/connector-agent/brocadecli"
-	"github.com/forgeai/connector-agent/evidencebundle"
+	"github.com/filterrex-ai/connector-agent/brocadecli"
+	"github.com/filterrex-ai/connector-agent/evidencebundle"
 )
 
 // artifactTimeLayout produces immutable, sortable, filesystem-safe names, e.g.

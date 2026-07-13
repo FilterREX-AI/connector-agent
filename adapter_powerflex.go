@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — PowerFlex Adapter (read-only)
+// FilterREX Connector Host — PowerFlex Adapter (read-only)
 //
 // Collects cluster/system health, storage capacity, alerts, and
 // inventory from Dell PowerFlex (VxFlex OS) Gateway REST API.

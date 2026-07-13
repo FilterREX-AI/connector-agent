@@ -1,16 +1,16 @@
-Package: forgeai-host
+Package: filterrex-connector
 Version: __VERSION__
 Architecture: __ARCH__
-Maintainer: ForgeAI <support@forgeai.com>
+Maintainer: FilterREX <support@san.filterrex.com>
 Depends: systemd
 Section: admin
 Priority: optional
-Homepage: https://forgeai.com
-Description: ForgeAI Connector Host — Enterprise Infrastructure Agent
+Homepage: https://san.filterrex.com
+Description: FilterREX Connector Host — Enterprise Infrastructure Agent
  Lightweight outbound-only agent for bridging on-premise infrastructure
- with the ForgeAI platform. Supports multiple simultaneous targets
+ with the FilterREX platform. Supports multiple simultaneous targets
  including Prometheus, Grafana, iDRAC, and other enterprise systems.
  .
- Binary: /usr/bin/forgeai-host
- Config: /etc/forgeai/connector.env
- Service: forgeai-host.service
+ Binary: /usr/bin/filterrex-connector
+ Config: /etc/filterrex/connector.env
+ Service: filterrex-connector.service

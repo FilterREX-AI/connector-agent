@@ -1,7 +1,7 @@
-// ForgeAI Connector Host — Desired-State Sync
+// FilterREX Connector Host — Desired-State Sync
 //
 // Implements polling-based desired-state synchronization from the
-// ForgeAI backend. The host periodically fetches its desired target
+// FilterREX backend. The host periodically fetches its desired target
 // profiles and reconciles them against running workers.
 //
 // The sync payload is config-only — no executable code, no task

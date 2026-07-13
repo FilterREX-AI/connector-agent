@@ -1,4 +1,4 @@
-// ForgeAI Local Connector — Proxmox Adapter
+// FilterREX Local Connector — Proxmox Adapter
 //
 // Read-only Proxmox VE API client that collects node health, workloads,
 // storage, and cluster status into a normalized snapshot.

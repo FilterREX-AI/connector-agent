@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Open WebUI Adapter (read-only)
+// FilterREX Connector Host — Open WebUI Adapter (read-only)
 //
 // Collects service health, backend/provider posture, model inventory,
 // and configuration from an Open WebUI instance. Designed for companion

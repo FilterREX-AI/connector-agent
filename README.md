@@ -1,38 +1,38 @@
-# ForgeAI Connector Host
+# FilterREX Connector Host
 
-> **This repository is the public release surface for the ForgeAI Connector Host.**
+> **This repository is the public release surface for the FilterREX Connector Host.**
 > It is automatically synced from the private application source repository.
-> The full ForgeAI platform lives in a separate, private repo.
+> The full FilterREX platform lives in a separate, private repo.
 
-A lightweight, outbound-only agent that bridges your local infrastructure with the ForgeAI platform. One host manages **multiple targets** (Proxmox, TrueNAS, Nutanix, and more) simultaneously. No inbound firewall ports needed.
+A lightweight, outbound-only agent that bridges your local infrastructure with the FilterREX platform. One host manages **multiple targets** (Proxmox, TrueNAS, Nutanix, and more) simultaneously. No inbound firewall ports needed.
 
 ## Quick Start
 
 ### 1. Enroll a Host
 
-Go to [Local Systems](https://san.filterrex.com/account/local-systems) in the ForgeAI dashboard to register a host and receive an enrollment token.
+Go to [Local Systems](https://san.filterrex.com/account/local-systems) in the FilterREX dashboard to register a host and receive an enrollment token.
 
 ### 2. Install & Run (Docker — Recommended)
 
 ```bash
-docker run -d --name forgeai-host \
+docker run -d --name filterrex-connector \
   --pull always \
   --restart unless-stopped \
-  -v /etc/forgeai:/etc/forgeai \
-  -e FORGEAI_ENROLLMENT_TOKEN='fgbt_your_token_here' \
+  -v /etc/filterrex:/etc/filterrex \
+  -e FILTERREX_ENROLLMENT_TOKEN='frbt_your_token_here' \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
 ### 3. Assign Targets
 
-After the host enrolls, go to **Connector Management** in the ForgeAI dashboard to assign infrastructure targets (Proxmox, TrueNAS, Nutanix, etc.) with their endpoints and credentials. Targets are managed remotely — no reinstall needed.
+After the host enrolls, go to **Connector Management** in the FilterREX dashboard to assign infrastructure targets (Proxmox, TrueNAS, Nutanix, etc.) with their endpoints and credentials. Targets are managed remotely — no reinstall needed.
 
 ## Alternative Install Methods
 
 ### Docker Compose
 
 ```bash
-FORGEAI_ENROLLMENT_TOKEN=fgbt_... docker compose up -d
+FILTERREX_ENROLLMENT_TOKEN=frbt_... docker compose up -d
 ```
 
 See `docker-compose.yml` for the full template.
@@ -41,7 +41,7 @@ See `docker-compose.yml` for the full template.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-  | bash -s -- --enroll-token 'fgbt_...'
+  | bash -s -- --enroll-token 'frbt_...'
 ```
 
 ### Build from Source
@@ -51,7 +51,7 @@ git clone https://github.com/filterrex-ai/connector-agent.git
 cd connector-agent
 go build -o connector-agent .
 
-export FORGEAI_ENROLLMENT_TOKEN='fgbt_...'
+export FILTERREX_ENROLLMENT_TOKEN='frbt_...'
 ./connector-agent
 ```
 
@@ -68,15 +68,15 @@ The host collects infrastructure telemetry for the targets you assign. All colle
 To update to the latest image while preserving your enrollment and target configuration:
 
 ```bash
-docker stop forgeai-host && docker rm forgeai-host
-docker run -d --name forgeai-host \
+docker stop filterrex-connector && docker rm filterrex-connector
+docker run -d --name filterrex-connector \
   --pull always \
   --restart unless-stopped \
-  -v forgeai-config:/etc/forgeai \
+  -v filterrex-config:/etc/filterrex \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
-> **Note:** The enrollment token is **not** needed for updates. Your host identity and target credentials are persisted in the `forgeai-config` volume and reused automatically.
+> **Note:** The enrollment token is **not** needed for updates. Your host identity and target credentials are persisted in the `filterrex-config` volume and reused automatically.
 
 ## Troubleshooting
 
@@ -85,24 +85,24 @@ docker run -d --name forgeai-host \
 If you see these messages in logs:
 
 ```
-[agent] ForgeAI Local Connector v0.1.0 starting
+[agent] FilterREX Local Connector v0.1.0 starting
 [config] CONNECTOR_TOKEN is required
 ```
 
-You are running an **outdated image**. The current host binary identifies as `ForgeAI Connector Host v...` and uses `FORGEAI_ENROLLMENT_TOKEN`.
+You are running an **outdated image**. The current host binary identifies as `FilterREX Connector Host v...` and uses `FILTERREX_ENROLLMENT_TOKEN`.
 
 **Fix:**
 
 ```bash
 # Stop and remove the old container
-docker stop forgeai-host && docker rm forgeai-host
+docker stop filterrex-connector && docker rm filterrex-connector
 
 # Pull the latest image and re-run
-docker run -d --name forgeai-host \
+docker run -d --name filterrex-connector \
   --pull always \
   --restart unless-stopped \
-  -v /etc/forgeai:/etc/forgeai \
-  -e FORGEAI_ENROLLMENT_TOKEN='fgbt_your_token_here' \
+  -v /etc/filterrex:/etc/filterrex \
+  -e FILTERREX_ENROLLMENT_TOKEN='frbt_your_token_here' \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
@@ -111,11 +111,11 @@ docker run -d --name forgeai-host \
 After starting, check logs:
 
 ```bash
-docker logs forgeai-host
+docker logs filterrex-connector
 ```
 
-**Expected:** `[host] ForgeAI Connector Host v0.7.x starting`
-**Problem:** `[agent] ForgeAI Local Connector v0.1.0` → stale image, see fix above.
+**Expected:** `[host] FilterREX Connector Host v0.7.x starting`
+**Problem:** `[agent] FilterREX Local Connector v0.1.0` → stale image, see fix above.
 
 ## Architecture
 
@@ -135,30 +135,30 @@ When reinstalling or redeploying a Connector Host with an existing named volume 
 **Docker (named volume):**
 
 ```bash
-docker stop forgeai-host && docker rm forgeai-host
-docker volume rm forgeai-config
-docker run -d --name forgeai-host \
+docker stop filterrex-connector && docker rm filterrex-connector
+docker volume rm filterrex-config
+docker run -d --name filterrex-connector \
   --pull always --restart unless-stopped \
-  -v forgeai-config:/etc/forgeai \
-  -e FORGEAI_ENROLLMENT_TOKEN='fgbt_new_token_here' \
+  -v filterrex-config:/etc/filterrex \
+  -e FILTERREX_ENROLLMENT_TOKEN='frbt_new_token_here' \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
 **Bind mount / systemd:**
 
 ```bash
-sudo systemctl stop forgeai-host
-sudo rm -f /etc/forgeai/host.json.enc /etc/forgeai/host.key
-sudo rm -f /etc/forgeai/secrets/*.enc
-# Update FORGEAI_ENROLLMENT_TOKEN in /etc/forgeai/connector.env
-sudo systemctl start forgeai-host
+sudo systemctl stop filterrex-connector
+sudo rm -f /etc/filterrex/host.json.enc /etc/filterrex/host.key
+sudo rm -f /etc/filterrex/secrets/*.enc
+# Update FILTERREX_ENROLLMENT_TOKEN in /etc/filterrex/connector.env
+sudo systemctl start filterrex-connector
 ```
 
 **Installer with reset flag:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-  | bash -s -- --enroll-token 'fgbt_...' --force-reset-state
+  | bash -s -- --enroll-token 'frbt_...' --force-reset-state
 ```
 
 **Runtime reset flag:**

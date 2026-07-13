@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Cisco Nexus / NX-OS Adapter (read-only)
+// FilterREX Connector Host — Cisco Nexus / NX-OS Adapter (read-only)
 //
 // Collects switch posture, interface status, VLAN/VRF inventory, and
 // BGP summary from Cisco Nexus switches via the NX-API REST interface.

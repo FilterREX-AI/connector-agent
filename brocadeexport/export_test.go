@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/forgeai/connector-agent/brocadecli"
+	"github.com/filterrex-ai/connector-agent/brocadecli"
 )
 
 // fakeRunner returns canned successful output for every profile command, except

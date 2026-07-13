@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Metrics & Instrumentation
+// FilterREX Connector Host — Metrics & Instrumentation
 //
 // Lightweight, lock-free metrics for collection timing, upload stats,
 // payload sizes, per-subcall tracking, and queue depth. Designed to be

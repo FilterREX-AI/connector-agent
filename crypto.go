@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Host Keypair & Asymmetric Credential Crypto
+// FilterREX Connector Host — Host Keypair & Asymmetric Credential Crypto
 //
 // Provides NaCl box (X25519 + XSalsa20-Poly1305) encryption for
 // per-target credential delivery. The host generates a keypair on

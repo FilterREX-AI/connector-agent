@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Centralized HTTP Client Factory
+// FilterREX Connector Host — Centralized HTTP Client Factory
 //
 // Provides NewHTTPClient which clones http.DefaultTransport to preserve
 // connection pooling, keepalives, and dial timeouts, then overlays

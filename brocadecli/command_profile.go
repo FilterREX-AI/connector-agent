@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/forgeai/connector-agent/evidencebundle"
+	"github.com/filterrex-ai/connector-agent/evidencebundle"
 )
 
 // resolvedCommand is one profile command resolved into an executable form for a

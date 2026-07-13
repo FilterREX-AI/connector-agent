@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Dell PowerSwitch Ethernet Adapter (read-only)
+// FilterREX Connector Host — Dell PowerSwitch Ethernet Adapter (read-only)
 //
 // Collects switch posture, interface status, VLAN/VRF inventory,
 // port-channel health, transceiver/optics status, and environment

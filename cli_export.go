@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/forgeai/connector-agent/brocadeexport"
+	"github.com/filterrex-ai/connector-agent/brocadeexport"
 )
 
 // runExportBrocadeBundleCLI implements the local `export-brocade-bundle`

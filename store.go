@@ -1,10 +1,10 @@
-// ForgeAI Connector Host — Encrypted Local Store
+// FilterREX Connector Host — Encrypted Local Store
 //
 // Provides a secure local store for host state, target profiles,
 // and encrypted credentials. Uses AES-256-GCM with a machine-derived key.
 //
 // Layout:
-//   /etc/forgeai/
+//   /etc/filterrex/
 //     host.json.enc      — encrypted host state (identity + config + targets)
 //     secrets/            — per-target encrypted credential files
 //       <target_id>.enc  — encrypted credentials for one target
@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	defaultConfigDir = "/etc/forgeai"
+	defaultConfigDir = "/etc/filterrex"
 	stateFileName    = "host.json.enc"
 	keyFileName      = "host.key"
 	secretsDirName   = "secrets"
@@ -132,7 +132,7 @@ func (s *Store) logMountDiagnostics(failPath string) {
 				F("suggested_cmd", fmt.Sprintf("sudo chown -R %d:%d %s", uid, gid, s.configDir)))
 		} else {
 			audit.Error("security.key_generated", "Fix: recreate named volume",
-				F("suggested_cmd", "docker volume rm forgeai-config && docker compose up -d"))
+				F("suggested_cmd", "docker volume rm filterrex-config && docker compose up -d"))
 		}
 	} else {
 		log.Printf("[store] ── Permission diagnostics ──")

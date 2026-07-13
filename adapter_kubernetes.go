@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Kubernetes Adapter (read-only)
+// FilterREX Connector Host — Kubernetes Adapter (read-only)
 //
 // Collects cluster health, node status, workload posture, and events
 // from a Kubernetes API server. Read-only — no exec, log streaming,

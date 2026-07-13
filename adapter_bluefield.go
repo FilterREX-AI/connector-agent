@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — NVIDIA BlueField DPU Adapter (read-only)
+// FilterREX Connector Host — NVIDIA BlueField DPU Adapter (read-only)
 //
 // Collects DPU posture, interface/link summary, offload/RDMA summary,
 // system utilization, security posture, and telemetry provider status

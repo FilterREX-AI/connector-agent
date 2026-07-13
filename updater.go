@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Signed Update Verification & Staged Rollout
+// FilterREX Connector Host — Signed Update Verification & Staged Rollout
 //
 // Implements the update lifecycle:
 //   1. Discover update metadata from backend
@@ -228,7 +228,7 @@ func NewUpdateManager(store *Store, backend *BackendClient, supervisor *Supervis
 		um.disabled = true
 	} else {
 		for keyID, keyB64 := range UpdatePublicKeys {
-			if keyB64 == "" || keyB64 == "FORGEAI_UPDATE_SIGNING_KEY_PLACEHOLDER" {
+			if keyB64 == "" || keyB64 == "FILTERREX_UPDATE_SIGNING_KEY_PLACEHOLDER" {
 				continue
 			}
 			pubBytes, err := base64.StdEncoding.DecodeString(keyB64)
@@ -499,7 +499,7 @@ func (um *UpdateManager) ApplyUpdate() error {
 	}
 
 	rollbackPath := filepath.Join(um.configDir, rollbackBinaryDir,
-		fmt.Sprintf("forgeai-host-%s", HostVersion))
+		fmt.Sprintf("filterrex-connector-%s", HostVersion))
 
 	if err := copyFile(currentBinary, rollbackPath); err != nil {
 		audit.Warn("update.rollback", "Failed to create rollback copy", Err(err))

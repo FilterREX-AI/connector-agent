@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — NetApp ONTAP Adapter (read-only)
+// FilterREX Connector Host — NetApp ONTAP Adapter (read-only)
 //
 // Collects cluster health, aggregate/capacity posture, SVM summary,
 // and alerts from ONTAP REST API (/api).

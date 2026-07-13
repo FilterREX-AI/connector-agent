@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — System Commands
+// FilterREX Connector Host — System Commands
 //
 // Handles platform="system" relay commands such as agent-restart
 // and agent-version. Extracted from relay.go for clarity.
@@ -21,10 +21,10 @@ func (rh *RelayHandler) executeSystemCommand(cmd RelayCommand, start time.Time) 
 		// Check granular restart permission
 		hostState := rh.supervisor.GetState()
 		if hostState == nil || !hostState.Config.RemoteRestartEnabled {
-			log.Printf("[system] REJECTED restart cmd=%s: remote restart is disabled (set FORGEAI_REMOTE_RESTART=true to enable)", cmd.ID)
+			log.Printf("[system] REJECTED restart cmd=%s: remote restart is disabled (set FILTERREX_REMOTE_RESTART=true to enable)", cmd.ID)
 			return RelayResult{
 				ID:           cmd.ID,
-				ErrorMessage: "Remote restart is disabled on this host. Set FORGEAI_REMOTE_RESTART=true or enable via host config.",
+				ErrorMessage: "Remote restart is disabled on this host. Set FILTERREX_REMOTE_RESTART=true or enable via host config.",
 				DurationMs:   time.Since(start).Milliseconds(),
 			}
 		}

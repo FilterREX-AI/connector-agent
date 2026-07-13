@@ -1,4 +1,4 @@
-# Verifying ForgeAI Connector Host Releases
+# Verifying FilterREX Connector Host Releases
 
 All release artifacts are signed using [Sigstore cosign](https://docs.sigstore.dev/) with keyless signing (GitHub OIDC identity). No public key management required.
 

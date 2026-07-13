@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — AI Fabric Probe
+// FilterREX Connector Host — AI Fabric Probe
 //
 // Handles platform="ai-fabric" relay commands. The cloud cannot reach
 // LAN-scoped Ollama / Open-WebUI / vLLM hosts, so the agent does the

@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Ollama Adapter (read-only)
+// FilterREX Connector Host — Ollama Adapter (read-only)
 //
 // Collects model inventory, runtime health, and version info from
 // a local Ollama instance. Designed for homelab AI server monitoring.

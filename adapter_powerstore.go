@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — PowerStore Adapter (read-only)
+// FilterREX Connector Host — PowerStore Adapter (read-only)
 //
 // Collects appliance health, capacity posture, alerts, and inventory
 // from Dell PowerStore REST API.

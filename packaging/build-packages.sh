@@ -1,6 +1,6 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────────
-# ForgeAI Connector Host — System Package Builder
+# FilterREX Connector Host — System Package Builder
 # ──────────────────────────────────────────────────────────────
 #
 # Builds .deb and .rpm packages from a pre-compiled binary using
@@ -13,9 +13,9 @@
 #   ./build-packages.sh 0.8.0 amd64 /tmp/connector-agent-linux-amd64
 #
 # Produces (in /tmp/):
-#   forgeai-host_0.8.0_amd64.deb
-#   forgeai-host-0.8.0-1.x86_64.rpm
-#   forgeai-host-0.8.0-packages.sha256
+#   filterrex-connector_0.8.0_amd64.deb
+#   filterrex-connector-0.8.0-1.x86_64.rpm
+#   filterrex-connector-0.8.0-packages.sha256
 #
 # Requirements:
 #   dpkg-deb (for .deb)
@@ -50,7 +50,7 @@ case "${GOARCH}" in
     ;;
 esac
 
-echo "=== Building packages: forgeai-host ${PKG_VERSION} (${GOARCH}) ==="
+echo "=== Building packages: filterrex-connector ${PKG_VERSION} (${GOARCH}) ==="
 echo "    Binary: ${BINARY}"
 echo "    Output: ${OUT_DIR}"
 echo ""
@@ -68,7 +68,7 @@ fi
 build_deb() {
   echo "── Building .deb package ──"
 
-  local DEB_NAME="forgeai-host_${PKG_VERSION}_${DEB_ARCH}"
+  local DEB_NAME="filterrex-connector_${PKG_VERSION}_${DEB_ARCH}"
   local DEB_ROOT="${OUT_DIR}/${DEB_NAME}"
 
   # Clean and create directory structure
@@ -76,18 +76,18 @@ build_deb() {
   mkdir -p "${DEB_ROOT}/DEBIAN"
   mkdir -p "${DEB_ROOT}/usr/bin"
   mkdir -p "${DEB_ROOT}/lib/systemd/system"
-  mkdir -p "${DEB_ROOT}/etc/forgeai"
+  mkdir -p "${DEB_ROOT}/etc/filterrex"
 
   # Install binary
-  install -m 0755 "${BINARY}" "${DEB_ROOT}/usr/bin/forgeai-host"
+  install -m 0755 "${BINARY}" "${DEB_ROOT}/usr/bin/filterrex-connector"
 
   # Install systemd unit
-  install -m 0644 "${SCRIPT_DIR}/forgeai-host.service" \
-    "${DEB_ROOT}/lib/systemd/system/forgeai-host.service"
+  install -m 0644 "${SCRIPT_DIR}/filterrex-connector.service" \
+    "${DEB_ROOT}/lib/systemd/system/filterrex-connector.service"
 
   # Install default config (with placeholder values)
   install -m 0640 "${SCRIPT_DIR}/connector.env.template" \
-    "${DEB_ROOT}/etc/forgeai/connector.env"
+    "${DEB_ROOT}/etc/filterrex/connector.env"
 
   # Generate control file with correct version and arch
   sed -e "s/__VERSION__/${PKG_VERSION}/" \
@@ -123,7 +123,7 @@ build_deb() {
 build_rpm() {
   echo "── Building .rpm package ──"
 
-  local RPM_NAME="forgeai-host-${PKG_VERSION}-1.${RPM_ARCH}"
+  local RPM_NAME="filterrex-connector-${PKG_VERSION}-1.${RPM_ARCH}"
 
   # Set up rpmbuild directory structure
   local RPM_TOPDIR="${OUT_DIR}/rpmbuild-${GOARCH}"
@@ -133,7 +133,7 @@ build_rpm() {
   # Create staging directory with installed layout
   local STAGE_DIR="${RPM_TOPDIR}/STAGE"
   mkdir -p "${STAGE_DIR}/usr/bin"
-  mkdir -p "${STAGE_DIR}/etc/forgeai"
+  mkdir -p "${STAGE_DIR}/etc/filterrex"
 
   # Determine systemd unit directory for rpmbuild
   local UNITDIR
@@ -141,12 +141,12 @@ build_rpm() {
   mkdir -p "${STAGE_DIR}${UNITDIR}"
 
   # Install files into staging
-  install -m 0755 "${BINARY}" "${STAGE_DIR}/usr/bin/forgeai-host"
-  install -m 0644 "${SCRIPT_DIR}/forgeai-host.service" "${STAGE_DIR}${UNITDIR}/forgeai-host.service"
-  install -m 0640 "${SCRIPT_DIR}/connector.env.template" "${STAGE_DIR}/etc/forgeai/connector.env"
+  install -m 0755 "${BINARY}" "${STAGE_DIR}/usr/bin/filterrex-connector"
+  install -m 0644 "${SCRIPT_DIR}/filterrex-connector.service" "${STAGE_DIR}${UNITDIR}/filterrex-connector.service"
+  install -m 0640 "${SCRIPT_DIR}/connector.env.template" "${STAGE_DIR}/etc/filterrex/connector.env"
 
   # Copy and configure spec file
-  cp "${SCRIPT_DIR}/rpm/forgeai-host.spec" "${RPM_TOPDIR}/SPECS/forgeai-host.spec"
+  cp "${SCRIPT_DIR}/rpm/filterrex-connector.spec" "${RPM_TOPDIR}/SPECS/filterrex-connector.spec"
 
   # Build RPM
   rpmbuild \
@@ -156,7 +156,7 @@ build_rpm() {
     --define "_stagedir ${STAGE_DIR}" \
     --define "_unitdir ${UNITDIR}" \
     --buildroot "${RPM_TOPDIR}/BUILDROOT" \
-    -bb "${RPM_TOPDIR}/SPECS/forgeai-host.spec"
+    -bb "${RPM_TOPDIR}/SPECS/filterrex-connector.spec"
 
   # Move RPM to output directory
   find "${RPM_TOPDIR}/RPMS" -name "*.rpm" -exec mv {} "${OUT_DIR}/" \;
@@ -179,12 +179,12 @@ build_rpm
 echo ""
 echo "── Generating checksums ──"
 
-CHECKSUM_FILE="${OUT_DIR}/forgeai-host-${PKG_VERSION}-packages.sha256"
+CHECKSUM_FILE="${OUT_DIR}/filterrex-connector-${PKG_VERSION}-packages.sha256"
 
 cd "${OUT_DIR}"
 sha256sum \
-  "forgeai-host_${PKG_VERSION}_${DEB_ARCH}.deb" \
-  forgeai-host-${PKG_VERSION}-1.${RPM_ARCH}.rpm \
+  "filterrex-connector_${PKG_VERSION}_${DEB_ARCH}.deb" \
+  filterrex-connector-${PKG_VERSION}-1.${RPM_ARCH}.rpm \
   > "${CHECKSUM_FILE}"
 
 echo "✓ ${CHECKSUM_FILE}"
@@ -192,6 +192,6 @@ echo ""
 echo "=== Package build complete ==="
 echo ""
 echo "Artifacts:"
-echo "  ${OUT_DIR}/forgeai-host_${PKG_VERSION}_${DEB_ARCH}.deb"
-echo "  ${OUT_DIR}/forgeai-host-${PKG_VERSION}-1.${RPM_ARCH}.rpm"
+echo "  ${OUT_DIR}/filterrex-connector_${PKG_VERSION}_${DEB_ARCH}.deb"
+echo "  ${OUT_DIR}/filterrex-connector-${PKG_VERSION}-1.${RPM_ARCH}.rpm"
 echo "  ${CHECKSUM_FILE}"

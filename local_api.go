@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Local API Server
+// FilterREX Connector Host — Local API Server
 //
 // Lightweight read-only HTTP server that serves local snapshot data
 // over the LAN in Hybrid Mode. Endpoints are authenticated via a
@@ -77,10 +77,10 @@ func NewLocalAPIServer(
 
 	// Parse IP allowlist from env.
 	// Default: 127.0.0.1/32 (localhost only).
-	// Set FORGEAI_LOCAL_API_ALLOWED_CIDR to expand,
+	// Set FILTERREX_LOCAL_API_ALLOWED_CIDR to expand,
 	// e.g. "192.168.0.0/16,10.0.0.0/8"
 	allowedNets := parseAllowedCIDRs(
-		os.Getenv("FORGEAI_LOCAL_API_ALLOWED_CIDR"))
+		os.Getenv("FILTERREX_LOCAL_API_ALLOWED_CIDR"))
 
 	certFile := filepath.Join(certDir, "local-api.crt")
 	keyFile := filepath.Join(certDir, "local-api.key")
@@ -95,7 +95,7 @@ func NewLocalAPIServer(
 		certFile:     certFile,
 		keyFile:      keyFile,
 	lanURL: func() string {
-		if v := os.Getenv("FORGEAI_LOCAL_API_URL"); v != "" {
+		if v := os.Getenv("FILTERREX_LOCAL_API_URL"); v != "" {
 			// Normalise to https since TLS is always attempted
 			v = strings.Replace(v, "http://", "https://", 1)
 			// Ensure the port is present — if the user provided just an IP,
@@ -252,8 +252,8 @@ func (s *LocalAPIServer) ensureCert() error {
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			Organization: []string{"ForgeAI Local Agent"},
-			CommonName:   "forgeai-local",
+			Organization: []string{"FilterREX Local Agent"},
+			CommonName:   "filterrex-local",
 		},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
@@ -662,7 +662,7 @@ func parseAllowedCIDRs(raw string) []*net.IPNet {
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {
 			audit.Warn("local_api.config",
-				"Invalid CIDR in FORGEAI_LOCAL_API_ALLOWED_CIDR",
+				"Invalid CIDR in FILTERREX_LOCAL_API_ALLOWED_CIDR",
 				F("cidr", cidr), Err(err))
 			continue
 		}

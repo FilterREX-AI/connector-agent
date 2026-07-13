@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Cisco NDFC / Nexus Dashboard Adapter (read-only)
+// FilterREX Connector Host — Cisco NDFC / Nexus Dashboard Adapter (read-only)
 //
 // Collects fabric inventory, switch health, VRF/network posture, and
 // alarms from Cisco Nexus Dashboard Fabric Controller via its REST API.

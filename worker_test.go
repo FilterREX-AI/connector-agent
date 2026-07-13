@@ -171,7 +171,7 @@ func TestWorkerFailedInitDoesNotEmitRunning(t *testing.T) {
 // with a target. If the deadlock is present, this test will hang and
 // the test runner will time out.
 func TestSupervisorReconcileDoesNotDeadlock(t *testing.T) {
-	store, _ := NewStore("/tmp/forgeai-test-deadlock-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
+	store, _ := NewStore("/tmp/filterrex-test-deadlock-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
 
 	backend := &BackendClient{BaseURL: "http://localhost:0"}
 	sup := NewSupervisor(store, backend)
@@ -232,7 +232,7 @@ func TestSupervisorReconcileDoesNotDeadlock(t *testing.T) {
 // TestSupervisorMultipleTargetsNoDeadlock verifies that reconciling
 // multiple targets simultaneously does not deadlock.
 func TestSupervisorMultipleTargetsNoDeadlock(t *testing.T) {
-	store, _ := NewStore("/tmp/forgeai-test-multi-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
+	store, _ := NewStore("/tmp/filterrex-test-multi-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
 	backend := &BackendClient{BaseURL: "http://localhost:0"}
 	sup := NewSupervisor(store, backend)
 
@@ -298,7 +298,7 @@ func TestSupervisorMultipleTargetsNoDeadlock(t *testing.T) {
 // surviving workers still reference the correct TargetID and TargetType —
 // not a shifted slice element.
 func TestWorkerProfileStableAfterTargetRemoval(t *testing.T) {
-	store, _ := NewStore("/tmp/forgeai-test-alias-"+fmt.Sprintf("%d", time.Now().UnixNano()), false)
+	store, _ := NewStore("/tmp/filterrex-test-alias-"+fmt.Sprintf("%d", time.Now().UnixNano()), false)
 	backend := &BackendClient{BaseURL: "http://localhost:0"}
 	sup := NewSupervisor(store, backend)
 

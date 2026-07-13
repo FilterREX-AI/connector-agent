@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — InfiniBand Fabric Adapter (read-only)
+// FilterREX Connector Host — InfiniBand Fabric Adapter (read-only)
 //
 // Collects fabric posture, switch inventory, port health, error
 // counters, congestion summary, and alarms from an InfiniBand

@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — PowerMax Adapter (read-only)
+// FilterREX Connector Host — PowerMax Adapter (read-only)
 //
 // Collects array health, capacity posture, SRDF summary, and alerts
 // from Dell PowerMax Unisphere REST API.

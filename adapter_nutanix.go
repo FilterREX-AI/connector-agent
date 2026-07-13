@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Nutanix Adapter (read-only)
+// FilterREX Connector Host — Nutanix Adapter (read-only)
 //
 // Collects cluster health, host posture, storage containers, VM summary,
 // and alerts from Nutanix Prism Central / Element via REST v2.

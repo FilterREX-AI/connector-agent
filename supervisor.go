@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Supervisor & Reconciler
+// FilterREX Connector Host — Supervisor & Reconciler
 //
 // The Supervisor is the long-running host process that manages
 // per-target workers. It reconciles desired state (target profiles)
@@ -140,7 +140,7 @@ func (s *Supervisor) Initialize(legacyCfg *Config) error {
 	s.state = &HostState{
 		Identity: HostIdentity{
 			HostID: generateID(),
-			Label:  "forgeai-host",
+			Label:  "filterrex-connector",
 		},
 		Config:  DefaultHostConfig(),
 		Targets: []TargetProfile{},

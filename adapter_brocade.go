@@ -1,4 +1,4 @@
-// ForgeAI Connector Host — Brocade FC Adapter (read-only)
+// FilterREX Connector Host — Brocade FC Adapter (read-only)
 //
 // Collects switch chassis info, port status, media (SFP) diagnostics,
 // and zoning configuration from Brocade FOS 8.2+ switches via the

@@ -265,7 +265,7 @@ func TestRecovery_HeartbeatOmitsErrorForHealthyWorker(t *testing.T) {
 // restart path: a failed worker is retried and recovers successfully,
 // with retry bookkeeping cleared.
 func TestRecovery_SupervisorRestartsFailedWorker(t *testing.T) {
-	store, _ := NewStore("/tmp/forgeai-test-recovery-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
+	store, _ := NewStore("/tmp/filterrex-test-recovery-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
 	backend := &BackendClient{BaseURL: "http://localhost:0"}
 	sup := NewSupervisor(store, backend)
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# ForgeAI Connector Host — Offline Bundle Builder
+# FilterREX Connector Host — Offline Bundle Builder
 #
 # Assembles a self-contained offline install bundle from release artifacts.
 # Used by CI (connector-publish.public.yml) or manually by release engineers.
@@ -12,8 +12,8 @@
 #   ./build-offline-bundle.sh v0.8.0 linux arm64 /tmp/connector-agent-linux-arm64
 #
 # Output:
-#   /tmp/forgeai-host-offline-v0.8.0-linux-amd64.tar.gz
-#   /tmp/forgeai-host-offline-v0.8.0-linux-amd64.tar.gz.sha256
+#   /tmp/filterrex-connector-offline-v0.8.0-linux-amd64.tar.gz
+#   /tmp/filterrex-connector-offline-v0.8.0-linux-amd64.tar.gz.sha256
 
 set -euo pipefail
 
@@ -22,7 +22,7 @@ OS="${2:?Usage: $0 <version> <os> <arch> [binary-path]}"
 ARCH="${3:?Usage: $0 <version> <os> <arch> [binary-path]}"
 BINARY_PATH="${4:-connector-agent-${OS}-${ARCH}}"
 
-BUNDLE_NAME="forgeai-host-offline-${VERSION}-${OS}-${ARCH}"
+BUNDLE_NAME="filterrex-connector-offline-${VERSION}-${OS}-${ARCH}"
 BUNDLE_DIR="/tmp/${BUNDLE_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -44,14 +44,14 @@ fi
 rm -rf "${BUNDLE_DIR}"
 mkdir -p "${BUNDLE_DIR}"
 
-# Binary (bundle name is 'connector-agent'; installer renames to 'forgeai-host')
+# Binary (bundle name is 'connector-agent'; installer renames to 'filterrex-connector')
 cp "${BINARY_PATH}" "${BUNDLE_DIR}/connector-agent"
 chmod +x "${BUNDLE_DIR}/connector-agent"
 
 # Packaging assets
 ASSETS=(
   install-offline.sh
-  forgeai-host.service
+  filterrex-connector.service
   connector.env.template
   VERIFICATION.md
   README-offline.md
@@ -75,7 +75,7 @@ cd "${BUNDLE_DIR}"
 sha256sum \
   connector-agent \
   install-offline.sh \
-  forgeai-host.service \
+  filterrex-connector.service \
   connector.env.template \
   VERIFICATION.md \
   README-offline.md \
