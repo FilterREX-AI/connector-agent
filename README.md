@@ -19,7 +19,7 @@ docker run -d --name filterrex-connector \
   --pull always \
   --restart unless-stopped \
   -v /etc/filterrex:/etc/filterrex \
-  -e FILTERREX_ENROLLMENT_TOKEN='frbt_your_token_here' \
+  -e FILTERREX_ENROLLMENT_TOKEN='frc_your_token_here' \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
@@ -32,7 +32,7 @@ After the host enrolls, go to **Connector Management** in the FilterREX dashboar
 ### Docker Compose
 
 ```bash
-FILTERREX_ENROLLMENT_TOKEN=frbt_... docker compose up -d
+FILTERREX_ENROLLMENT_TOKEN=frc_... docker compose up -d
 ```
 
 See `docker-compose.yml` for the full template.
@@ -41,7 +41,7 @@ See `docker-compose.yml` for the full template.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-  | bash -s -- --enroll-token 'frbt_...'
+  | bash -s -- --enroll-token 'frc_...'
 ```
 
 ### Build from Source
@@ -51,7 +51,7 @@ git clone https://github.com/filterrex-ai/connector-agent.git
 cd connector-agent
 go build -o connector-agent .
 
-export FILTERREX_ENROLLMENT_TOKEN='frbt_...'
+export FILTERREX_ENROLLMENT_TOKEN='frc_...'
 ./connector-agent
 ```
 
@@ -102,7 +102,7 @@ docker run -d --name filterrex-connector \
   --pull always \
   --restart unless-stopped \
   -v /etc/filterrex:/etc/filterrex \
-  -e FILTERREX_ENROLLMENT_TOKEN='frbt_your_token_here' \
+  -e FILTERREX_ENROLLMENT_TOKEN='frc_your_token_here' \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
@@ -140,7 +140,7 @@ docker volume rm filterrex-config
 docker run -d --name filterrex-connector \
   --pull always --restart unless-stopped \
   -v filterrex-config:/etc/filterrex \
-  -e FILTERREX_ENROLLMENT_TOKEN='frbt_new_token_here' \
+  -e FILTERREX_ENROLLMENT_TOKEN='frc_new_token_here' \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
@@ -158,7 +158,7 @@ sudo systemctl start filterrex-connector
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-  | bash -s -- --enroll-token 'frbt_...' --force-reset-state
+  | bash -s -- --enroll-token 'frc_...' --force-reset-state
 ```
 
 **Runtime reset flag:**

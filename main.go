@@ -10,7 +10,7 @@
 //   - Legacy single-target env-var mode for backward compatibility
 //
 // Usage (Enrollment — recommended):
-//   FILTERREX_ENROLLMENT_TOKEN=frbt_... ./connector-agent
+//   FILTERREX_ENROLLMENT_TOKEN=frc_... ./connector-agent
 //
 // Usage (Legacy mode — single target via env vars):
 //   CONNECTOR_TOKEN=frc_... TARGET_TYPE=proxmox PROXMOX_BASE_URL=... ./connector-agent

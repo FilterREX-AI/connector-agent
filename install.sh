@@ -4,18 +4,18 @@
 # Installs the connector host as a systemd service that can manage
 # multiple infrastructure targets simultaneously from a single host.
 #
-# Token types:
-#   frbt_...  = Bootstrap enrollment token (temporary, used once to register the host)
-#   frc_...   = Persistent connector token (issued by backend after enrollment)
+# Token:
+#   frc_...  = Enrollment/connector token from the FilterREX dashboard. Used to
+#             enroll the host, then retained as its persistent connector token.
 #
 # Usage — Enrollment (recommended):
 #   curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-#     | bash -s -- --enroll-token 'frbt_your_enrollment_token' \
+#     | bash -s -- --enroll-token 'frc_your_enrollment_token' \
 #         --backend-url 'https://qugzesfapcdhiyrhegdx.supabase.co'
 #
 # Usage — Pinned version:
 #   curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-#     | bash -s -- --enroll-token 'frbt_...' --version v0.7.1
+#     | bash -s -- --enroll-token 'frc_...' --version v0.7.1
 #
 # Usage — Legacy mode (backward compatible, persistent connector token):
 #   curl -fsSL ... | bash -s -- --token 'frc_...' --target-type 'proxmox' ...
@@ -94,29 +94,19 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
   echo "Error: an authentication token is required."
   echo ""
   echo "  Enrollment (recommended):"
-  echo "    --enroll-token 'frbt_...'   Bootstrap enrollment token from the FilterREX dashboard."
-  echo "                                The host uses this once to register, then receives a"
-  echo "                                persistent identity. Targets are managed remotely."
+  echo "    --enroll-token 'frc_...'   Enrollment token from the FilterREX dashboard."
+  echo "                                The host uses this to register, then retains it as its"
+  echo "                                connector token. Targets are managed remotely."
   echo ""
   echo "  Legacy (single-target, backward compatible):"
-  echo "    --token 'frc_...'           Persistent connector token, requires --target-type."
+  echo "    --token 'frc_...'           Connector token, requires --target-type."
   exit 1
 fi
 
-# Warn on likely token-type misuse
-if [ -n "$ENROLLMENT_TOKEN" ] && [[ "$ENROLLMENT_TOKEN" == frc_* ]]; then
-  echo "⚠️  Warning: --enroll-token value starts with 'frc_', which looks like a persistent"
-  echo "   connector token. Enrollment tokens typically start with 'frbt_'."
-  echo "   Continuing, but enrollment may fail if the token type is wrong."
-  echo ""
-fi
+# Enrollment and connector tokens share the frc_ prefix (the dashboard issues one
+# frc_ token that is used for enrollment and then retained as the connector token),
+# so no prefix-based token-type warning is emitted here.
 
-if [ -n "$CONNECTOR_TOKEN" ] && [[ "$CONNECTOR_TOKEN" == frbt_* ]]; then
-  echo "⚠️  Warning: --token value starts with 'frbt_', which looks like a bootstrap enrollment"
-  echo "   token. Legacy --token expects a persistent connector token (frc_...)."
-  echo "   Use --enroll-token instead for enrollment mode."
-  echo ""
-fi
 
 echo "╔══════════════════════════════════════════════╗"
 echo "║  FilterREX Connector Host — Installer           ║"
@@ -353,7 +343,7 @@ if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "000" ]; then
   echo "      -v filterrex-config:/etc/filterrex \\"
   echo "      -e BACKEND_URL='${BACKEND_URL}' \\"
   if [ -n "$ENROLLMENT_TOKEN" ]; then
-    echo "      -e FILTERREX_ENROLLMENT_TOKEN='<your_frbt_token>' \\"
+    echo "      -e FILTERREX_ENROLLMENT_TOKEN='<your_frc_token>' \\"
   else
     echo "      -e CONNECTOR_TOKEN='<your_frc_token>' \\"
   fi

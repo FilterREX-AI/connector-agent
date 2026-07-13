@@ -4,7 +4,7 @@
 # Enroll with a token, then assign targets from the FilterREX dashboard.
 #
 # Usage:
-#   FILTERREX_ENROLLMENT_TOKEN=frbt_... docker compose up -d
+#   FILTERREX_ENROLLMENT_TOKEN=frc_... docker compose up -d
 #
 # Security hardening:
 #   - read_only root filesystem (writes only to /etc/filterrex volume + /tmp tmpfs)

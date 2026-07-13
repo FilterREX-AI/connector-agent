@@ -8,7 +8,7 @@ Self-contained installation bundle for enterprise deployments where GitHub and p
 
 The host has no access to GitHub, but **can reach the FilterREX backend** (outbound HTTPS).
 
-- Use `--enroll-token 'frbt_...'` as normal
+- Use `--enroll-token 'frc_...'` as normal
 - The host enrolls with the backend on first start
 - Targets are managed remotely from the FilterREX dashboard
 
@@ -97,7 +97,7 @@ sudo bash install-offline.sh --verify-only
 ```bash
 tar xzf filterrex-connector-offline-<version>-linux-amd64.tar.gz
 cd filterrex-connector-offline-<version>-linux-amd64/
-sudo bash install-offline.sh --verify --enroll-token 'frbt_your_token'
+sudo bash install-offline.sh --verify --enroll-token 'frc_your_token'
 ```
 
 ### Fully Disconnected
@@ -120,7 +120,7 @@ sudo bash install-offline.sh --verify
 
 | Flag | Description |
 |------|-------------|
-| `--enroll-token TOKEN` | Bootstrap enrollment token (restricted network) |
+| `--enroll-token TOKEN` | Enrollment token (restricted network) |
 | `--token TOKEN` | Pre-provisioned persistent connector token (fully disconnected) |
 | `--label NAME` | Human-readable host label |
 | `--config-dir DIR` | Config directory (default: `/etc/filterrex`) |

@@ -14,8 +14,8 @@
 #                        (frc_...) or use a pre-seeded config artifact. See README-offline.md.
 #
 # Usage:
-#   sudo bash install-offline.sh --enroll-token 'frbt_...'
-#   sudo bash install-offline.sh --enroll-token 'frbt_...' --verify
+#   sudo bash install-offline.sh --enroll-token 'frc_...'
+#   sudo bash install-offline.sh --enroll-token 'frc_...' --verify
 #   sudo bash install-offline.sh --verify    # verify bundle integrity only, no install
 #
 # The binary in this bundle is named 'connector-agent'. The installer copies it
@@ -103,7 +103,7 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
       echo "Error: an authentication token is required for new installations."
       echo ""
       echo "  Restricted network (backend reachable):"
-      echo "    --enroll-token 'frbt_...'   Bootstrap enrollment token from the FilterREX dashboard."
+      echo "    --enroll-token 'frc_...'   Enrollment token from the FilterREX dashboard."
       echo ""
       echo "  Fully disconnected (no backend at install time):"
       echo "    --token 'frc_...'           Pre-provisioned persistent connector token."
@@ -114,18 +114,10 @@ if [ -z "$ENROLLMENT_TOKEN" ] && [ -z "$CONNECTOR_TOKEN" ]; then
   fi
 fi
 
-# Warn on likely token-type misuse
-if [ -n "$ENROLLMENT_TOKEN" ] && [[ "$ENROLLMENT_TOKEN" == frc_* ]]; then
-  echo "⚠️  Warning: --enroll-token value starts with 'frc_', which looks like a persistent"
-  echo "   connector token. Enrollment tokens typically start with 'frbt_'."
-  echo ""
-fi
+# Enrollment and connector tokens share the frc_ prefix (the dashboard issues one
+# frc_ token that is used for enrollment and then retained as the connector token),
+# so no prefix-based token-type warning is emitted here.
 
-if [ -n "$CONNECTOR_TOKEN" ] && [[ "$CONNECTOR_TOKEN" == frbt_* ]]; then
-  echo "⚠️  Warning: --token value starts with 'frbt_', which looks like a bootstrap enrollment"
-  echo "   token. Use --enroll-token instead for enrollment mode."
-  echo ""
-fi
 
 # ── Verify bundle binary exists ──
 
