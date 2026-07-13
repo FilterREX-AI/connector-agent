@@ -2,7 +2,7 @@ Name:           filterrex-connector
 Version:        %{_version}
 Release:        1%{?dist}
 Summary:        FilterREX Connector Host — Enterprise Infrastructure Agent
-License:        MIT
+License:        Apache-2.0
 URL:            https://san.filterrex.com
 
 BuildArch:      %{_build_arch}

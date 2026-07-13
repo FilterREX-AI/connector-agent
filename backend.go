@@ -7,7 +7,7 @@
 //   - Acknowledgements
 //
 // The backend client is deliberately separate from adapter logic.
-// It knows nothing about Proxmox, TrueNAS, etc.
+// It knows nothing about any specific target vendor.
 
 package main
 

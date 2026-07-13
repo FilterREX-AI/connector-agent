@@ -1,8 +1,7 @@
 // FilterREX Connector Host — Concurrent Sub-Collection
 //
-// Provides bounded concurrency helpers for multi-call adapters
-// (Nutanix, PowerMax, Proxmox, etc.) to parallelize independent
-// API sub-calls within a single collection cycle.
+// Provides bounded concurrency helpers for multi-call adapters to
+// parallelize independent API sub-calls within a single collection cycle.
 
 package main
 

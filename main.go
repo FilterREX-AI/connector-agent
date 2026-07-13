@@ -159,30 +159,11 @@ func main() {
 	// Create supervisor
 	supervisor := NewSupervisor(store, backend)
 
-	// Register available adapters — built-in only, no dynamic plugins
-	supervisor.RegisterAdapter("proxmox", NewProxmoxAdapter)
-	supervisor.RegisterAdapter("truenas", NewTrueNASAdapter)
-	supervisor.RegisterAdapter("nutanix", NewNutanixAdapter)
-	supervisor.RegisterAdapter("prometheus", NewPrometheusAdapter)
-	supervisor.RegisterAdapter("grafana", NewGrafanaAdapter)
-	supervisor.RegisterAdapter("ollama", NewOllamaAdapter)
-	supervisor.RegisterAdapter("generic-http", NewGenericHTTPAdapter)
-	supervisor.RegisterAdapter("open-webui", NewOpenwebuiAdapter)
-	supervisor.RegisterAdapter("pure-storage", NewPureStorageAdapter)
-	supervisor.RegisterAdapter("netapp-ontap", NewNetAppONTAPAdapter)
-	supervisor.RegisterAdapter("powerstore", NewPowerStoreAdapter)
-	supervisor.RegisterAdapter("powermax", NewPowerMaxAdapter)
-	supervisor.RegisterAdapter("powerflex", NewPowerFlexAdapter)
-	supervisor.RegisterAdapter("kubernetes", NewKubernetesAdapter)
-	supervisor.RegisterAdapter("nexus", NewNexusAdapter)
-	supervisor.RegisterAdapter("ndfc", NewNdfcAdapter)
-	supervisor.RegisterAdapter("brocade", NewBrocadeAdapter)
-	supervisor.RegisterAdapter("powerswitch", NewPowerSwitchAdapter)
-	supervisor.RegisterAdapter("infiniband", NewInfiniBandAdapter)
-	supervisor.RegisterAdapter("bluefield", NewBlueFieldAdapter)
-	supervisor.RegisterAdapter("dell-idrac", NewIdracAdapter)
-	supervisor.RegisterAdapter("mikrotik", NewMikroTikAdapter)
-	supervisor.RegisterAdapter("mikrotik-swos", NewMikroTikSwOSAdapter)
+	// Register available adapters — built-in only, no dynamic plugins.
+	// The concrete set is build-tagged: adapters_full.go (default) registers
+	// every vendor adapter; adapters_sanonly.go (SAN-only public build)
+	// registers just Brocade.
+	registerAdapters(supervisor)
 
 	// ── Enrollment / State Loading ──
 	enrollmentToken := os.Getenv("FILTERREX_ENROLLMENT_TOKEN")

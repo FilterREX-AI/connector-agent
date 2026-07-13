@@ -23,8 +23,9 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /build/connector-agent /usr/local/bin/connector-agent
 
 LABEL org.opencontainers.image.source="https://github.com/filterrex-ai/connector-agent"
-LABEL org.opencontainers.image.description="FilterREX-AI Connector Host — Multi-Target Agent"
+LABEL org.opencontainers.image.description="FilterREX SAN Connector — read-only Brocade evidence collection agent"
 LABEL org.opencontainers.image.vendor="FilterREX-AI"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 # Non-root user + config directory
 # Create dirs BEFORE declaring VOLUME so ownership is baked into the image layer.

@@ -1,0 +1,28 @@
+FilterREX Connector Agent
+Copyright © 2026 FilterREX-AI
+
+This product includes software developed by FilterREX-AI, licensed under the
+Apache License, Version 2.0 (the "License"). You may obtain a copy of the
+License in the accompanying LICENSE file or at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+------------------------------------------------------------------------------
+Scope of the Apache License 2.0 in this repository
+------------------------------------------------------------------------------
+
+The Apache License 2.0 applies to the SOURCE CODE in this repository only.
+
+The following are NOT licensed under the Apache License 2.0:
+
+  * The FilterREX and FilterREX SAN names, logos, icons, product names,
+    visual brand assets, and related branding. These are trademarks and/or
+    brand assets of FilterREX-AI. See TRADEMARKS.md.
+
+  * Documentation, diagrams, screenshots, installation guidance, and
+    marketing materials in this repository. Unless a file explicitly states
+    otherwise, these are provided for use with the FilterREX product and are
+    All Rights Reserved.
+
+Use of the FilterREX marks requires separate permission from FilterREX-AI,
+except for the limited nominative (descriptive) use permitted in TRADEMARKS.md.

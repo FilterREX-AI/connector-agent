@@ -4,7 +4,7 @@
 > It is automatically synced from the private application source repository.
 > The full FilterREX platform lives in a separate, private repo.
 
-A lightweight, outbound-only agent that bridges your local infrastructure with the FilterREX platform. One host manages **multiple targets** (Proxmox, TrueNAS, Nutanix, and more) simultaneously. No inbound firewall ports needed.
+A lightweight, outbound-only agent that performs **read-only Brocade SAN evidence collection** for the FilterREX platform. It runs on your LAN, connects outbound only, and needs no inbound firewall ports.
 
 ## Quick Start
 
@@ -23,9 +23,9 @@ docker run -d --name filterrex-connector \
   ghcr.io/filterrex-ai/connector-agent/connector-agent:latest
 ```
 
-### 3. Assign Targets
+### 3. Assign Brocade Switches
 
-After the host enrolls, go to **Connector Management** in the FilterREX dashboard to assign infrastructure targets (Proxmox, TrueNAS, Nutanix, etc.) with their endpoints and credentials. Targets are managed remotely — no reinstall needed.
+After the host enrolls, go to **Connector Management** in the FilterREX dashboard to assign the Brocade FC switches to collect from, with their endpoints and read-only credentials. Targets are managed remotely — no reinstall needed.
 
 ## Alternative Install Methods
 
@@ -59,9 +59,12 @@ Requires [Go 1.22+](https://go.dev/dl/).
 
 ## What It Collects (Read-Only)
 
-The host collects infrastructure telemetry for the targets you assign. All collection is read-only.
+The host collects read-only Brocade FC fabric evidence — chassis and switch
+info, port and SFP (media) diagnostics, and zoning configuration — via the
+FOS REST API, and can package it into a FilterREX Evidence Bundle. All
+collection is strictly read-only; the agent never issues configuration changes.
 
-**Supported targets:** Proxmox VE, TrueNAS, Nutanix, Prometheus, Grafana, Ollama, Pure Storage, NetApp ONTAP, Dell PowerStore, Dell PowerMax, Dell PowerFlex, and generic HTTP endpoints.
+**Supported targets:** Brocade FC switches (FOS 8.2+).
 
 ## Updating the Agent
 
@@ -120,8 +123,8 @@ docker logs filterrex-connector
 ## Architecture
 
 - **Outbound-only** — no inbound ports needed
-- **Multi-target** — one host manages multiple infrastructure targets as independent workers
-- **Enrollment-first** — host enrolls once, targets are assigned remotely
+- **Read-only** — collects Brocade FC fabric evidence; never makes changes
+- **Enrollment-first** — host enrolls once, switches are assigned remotely
 - **Encrypted credentials** — target credentials are delivered encrypted, never in install commands
 - **Auto-update** — signed binary updates with automatic rollback
 - **Non-root** — runs as unprivileged user
@@ -178,4 +181,8 @@ Docker `:latest` is updated on every sync to main. Tagged releases (e.g. `v0.2.0
 
 ## License
 
-MIT
+Source code is licensed under the **Apache License 2.0** (see `LICENSE`).
+
+The FilterREX name, logos, and brand assets are **not** covered by that
+license (see `NOTICE` and `TRADEMARKS.md`). Documentation and media in this
+repository are All Rights Reserved unless a file states otherwise.

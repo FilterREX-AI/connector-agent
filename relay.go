@@ -25,6 +25,44 @@ const (
 	defaultRelayResponsePath = "/functions/v1/connector-api-response"
 )
 
+// ── Vendor extension hooks ──
+//
+// The SAN-only public build compiles relay.go alone and handles only the
+// Brocade + generic REST path. In the full (default) build, a vendor
+// extension file's init() wires these hooks to add extra transports, auth
+// overrides, probing, and platform allow-list entries.
+//
+// When a hook is nil the connector simply reports the capability as
+// unsupported instead of linking any vendor-specific logic.
+var (
+	// vendorTransportHook handles non-REST vendor transports. Returns
+	// (result, handled); handled=false falls back to the generic path.
+	vendorTransportHook func(rh *RelayHandler, cmd RelayCommand, target *TargetProfile, creds map[string]string) (RelayResult, bool)
+
+	// vendorAuthHook applies vendor-specific auth overrides. Returns true
+	// when it handled auth.
+	vendorAuthHook func(req *http.Request, target *TargetProfile, creds map[string]string) bool
+
+	// aiFabricProbeHook performs a LAN AI-runtime reachability probe.
+	aiFabricProbeHook func(rh *RelayHandler, cmd RelayCommand, start time.Time) RelayResult
+
+	// vendorPlatforms lists additional non-SAN platforms permitted by the
+	// full build. The SAN-only build allows only the SAN base set.
+	vendorPlatforms []string
+)
+
+// buildAllowedPlatforms returns the relay platform allow-list. The base is
+// SAN-only; the full build extends it via vendorPlatforms.
+func buildAllowedPlatforms() map[string]bool {
+	allowed := map[string]bool{
+		"brocade": true,
+	}
+	for _, p := range vendorPlatforms {
+		allowed[p] = true
+	}
+	return allowed
+}
+
 // RelayCommand is a pending API execution command from the cloud.
 type RelayCommand struct {
 	ID              string                 `json:"id"`
@@ -78,39 +116,7 @@ func NewRelayHandler(supervisor *Supervisor, backend *BackendClient, store *Stor
 		store:               store,
 		changePolicy:        changePolicy,
 		allowedSafetyLevels: safetyLevels,
-		allowedPlatforms: map[string]bool{
-			"ai-fabric":       true,
-			"proxmox":         true,
-			"ollama":          true,
-			"nutanix":         true,
-			"truenas":         true,
-			"openwebui":       true,
-			"prometheus":      true,
-			"grafana":         true,
-			"kubernetes":      true,
-			"powermax":        true,
-			"nexus":           true,
-			"ndfc":            true,
-			"brocade":         true,
-			"powerswitch":     true,
-			"infiniband":      true,
-			"bluefield":       true,
-			"dell-idrac":      true,
-			"nvidia-sonic":    true,
-			"sonic-community": true,
-			"emulex":          true,
-			"cisco-mds":       true,
-			"docker":          true,
-			"linux":           true,
-			"pure-storage":    true,
-			"netapp-ontap":    true,
-			"powerstore":      true,
-			"powerflex":       true,
-			"generic-http":    true,
-			"mikrotik":        true,
-			"mikrotik-swos":   true,
-		},
-
+		allowedPlatforms:    buildAllowedPlatforms(),
 	}
 }
 
@@ -181,7 +187,14 @@ func (rh *RelayHandler) executeCommand(cmd RelayCommand) RelayResult {
 
 	// ── AI Fabric probes — local HTTP reachability check, no target profile ──
 	if cmd.Platform == "ai-fabric" {
-		return rh.executeAIFabricProbe(cmd, start)
+		if aiFabricProbeHook != nil {
+			return aiFabricProbeHook(rh, cmd, start)
+		}
+		return RelayResult{
+			ID:           cmd.ID,
+			ErrorMessage: "ai-fabric probing is not supported by this connector",
+			DurationMs:   time.Since(start).Milliseconds(),
+		}
 	}
 
 	// Platform allow-list check
@@ -278,12 +291,15 @@ func (rh *RelayHandler) executeCommand(cmd RelayCommand) RelayResult {
 
 // executeHTTP performs the actual HTTP request against the target endpoint.
 func (rh *RelayHandler) executeHTTP(cmd RelayCommand, target *TargetProfile, creds map[string]string) RelayResult {
-	// Platform-specific dispatch — some platforms use non-REST transports
-	// Check both target type and command platform for robustness
+	// Vendor-specific dispatch — some platforms use non-REST transports.
+	// In the SAN-only build vendorTransportHook is nil and we fall straight
+	// through to the generic/Brocade REST path.
 	normalizedTarget := strings.ToLower(strings.TrimSpace(target.TargetType))
 	normalizedPlatform := strings.ToLower(strings.TrimSpace(cmd.Platform))
-	if normalizedTarget == "truenas" || normalizedPlatform == "truenas" {
-		return rh.executeTrueNAS(cmd, target, creds)
+	if vendorTransportHook != nil {
+		if res, handled := vendorTransportHook(rh, cmd, target, creds); handled {
+			return res
+		}
 	}
 
 	// Brocade: resolve the adapter's base URL (may have fallen back from HTTPS to HTTP)
@@ -393,134 +409,10 @@ func (rh *RelayHandler) executeHTTP(cmd RelayCommand, target *TargetProfile, cre
 	return result
 }
 
-// executeTrueNAS handles TrueNAS relay commands via the REST API.
-// TrueNAS middleware method names (e.g. "system.info", "pool.query") are
-// translated to REST paths: system.info → GET /api/v2.0/system/info,
-// pool.query → GET /api/v2.0/pool.
-func (rh *RelayHandler) executeTrueNAS(cmd RelayCommand, target *TargetProfile, creds map[string]string) RelayResult {
-	method := cmd.Path // middleware method name, e.g. "system.info"
+// NOTE: non-REST vendor transports live in the vendor extension file, which
+// is excluded from the SAN-only public build.
 
-	// Map middleware method to REST API v2 path
-	restPath := truenasMethodToREST(method)
 
-	// For get_instance methods, extract the ID from JSON-RPC params and append /id/{id}
-	if strings.HasSuffix(method, ".get_instance") {
-		if id := extractTrueNASInstanceID(cmd.Body); id != "" {
-			restPath = strings.TrimSuffix(restPath, "/get_instance") + "/id/" + id
-		}
-	}
-
-	fullURL := joinURL(target.Endpoint, "/api/v2.0/"+restPath)
-
-	audit.Debug("relay.truenas", "TrueNAS dispatch",
-		F("cmd_id", cmd.ID),
-		F("middleware_method", method),
-		F("rest_path", restPath),
-		F("resolved_url", fullURL))
-
-	req, err := http.NewRequest("GET", fullURL, nil)
-	if err != nil {
-		return RelayResult{ID: cmd.ID, ErrorMessage: fmt.Sprintf("create request: %v", err)}
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	applyAuth(req, target, creds)
-
-	client := buildHTTPClient(target)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return RelayResult{
-			ID:           cmd.ID,
-			ErrorMessage: fmt.Sprintf("execute request: %v", err),
-		}
-	}
-	defer resp.Body.Close()
-
-	limited := io.LimitReader(resp.Body, 5*1024*1024)
-	respBytes, err := io.ReadAll(limited)
-	if err != nil {
-		return RelayResult{
-			ID:             cmd.ID,
-			ResponseStatus: resp.StatusCode,
-			ErrorMessage:   fmt.Sprintf("read response: %v", err),
-		}
-	}
-
-	// TrueNAS REST API can return arrays (query endpoints) or objects
-	var respData map[string]interface{}
-	if err := json.Unmarshal(respBytes, &respData); err != nil {
-		// Try array response — wrap in a result envelope
-		var arrData []interface{}
-		if arrErr := json.Unmarshal(respBytes, &arrData); arrErr == nil {
-			respData = map[string]interface{}{"result": arrData}
-		} else {
-			respData = map[string]interface{}{"rawText": string(respBytes)}
-		}
-	}
-
-	result := RelayResult{
-		ID:             cmd.ID,
-		ResponseStatus: resp.StatusCode,
-		ResponseData:   respData,
-	}
-
-	if resp.StatusCode >= 400 {
-		result.ErrorMessage = fmt.Sprintf("upstream returned HTTP %d", resp.StatusCode)
-	}
-
-	return result
-}
-
-// truenasMethodToREST converts a TrueNAS middleware method name to a REST API v2 path.
-// Examples:
-//   system.info       → system/info
-//   system.version    → system/version
-//   pool.query        → pool
-//   pool.dataset.query → pool/dataset
-//   disk.query        → disk
-//   sharing.smb.query → sharing/smb
-//   service.query     → service
-func truenasMethodToREST(method string) string {
-	// Split on "." — the last segment is the verb (info, query, get_instance, etc.)
-	parts := strings.Split(method, ".")
-	if len(parts) < 2 {
-		// Fallback: use as-is with slashes
-		return strings.ReplaceAll(method, ".", "/")
-	}
-
-	verb := parts[len(parts)-1]
-	resource := parts[:len(parts)-1]
-
-	// For "query" verbs, the REST endpoint is the resource itself (GET /pool)
-	// For "info", "version", etc., append the verb (GET /system/info)
-	switch verb {
-	case "query":
-		return strings.Join(resource, "/")
-	default:
-		return strings.Join(parts, "/")
-	}
-}
-
-// extractTrueNASInstanceID extracts the first positional ID from a JSON-RPC params array.
-// The request body has shape: { "params": [id, ...], ... }
-func extractTrueNASInstanceID(body map[string]interface{}) string {
-	if body == nil {
-		return ""
-	}
-	params, ok := body["params"]
-	if !ok {
-		return ""
-	}
-	arr, ok := params.([]interface{})
-	if !ok || len(arr) == 0 {
-		return ""
-	}
-	// ID can be numeric or string
-	return fmt.Sprintf("%v", arr[0])
-}
 
 // joinURL safely joins a base endpoint URL and a path segment,
 // ensuring exactly one "/" separator between them.
@@ -541,15 +433,10 @@ func joinURL(base, path string) string {
 
 // applyAuth sets authentication headers based on target config.
 func applyAuth(req *http.Request, target *TargetProfile, creds map[string]string) {
-	// Platform-specific auth overrides
-	if target.TargetType == "proxmox" {
-		applyProxmoxAuth(req, target, creds)
-		return
-	}
-
-	// Prometheus: support custom header-based auth (e.g. X-Token, Authorization via header_name/header_value)
-	if target.TargetType == "prometheus" {
-		applyPrometheusAuth(req, target, creds)
+	// Vendor-specific auth overrides are wired only in the full build via
+	// vendorAuthHook. In the SAN-only build the hook is nil and we use the
+	// generic auth below.
+	if vendorAuthHook != nil && vendorAuthHook(req, target, creds) {
 		return
 	}
 
@@ -577,68 +464,8 @@ func applyAuth(req *http.Request, target *TargetProfile, creds map[string]string
 	}
 }
 
-// applyPrometheusAuth handles Prometheus header-based or basic auth.
-// Matches the adapter_prometheus.go Init() auth logic.
-func applyPrometheusAuth(req *http.Request, target *TargetProfile, creds map[string]string) {
-	// Custom header auth (e.g. header_name=Authorization, header_value=Bearer xxx)
-	if headerName := creds["header_name"]; headerName != "" {
-		req.Header.Set(headerName, creds["header_value"])
-		log.Printf("[relay] Applied Prometheus custom header auth (%s)", headerName)
-		return
-	}
-
-	// Basic auth fallback
-	if username := creds["username"]; username != "" {
-		req.SetBasicAuth(username, creds["password"])
-		log.Printf("[relay] Applied Prometheus basic auth")
-		return
-	}
-
-	// Bearer token fallback
-	token := creds["token"]
-	if token == "" {
-		token = creds["api_token"]
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-		log.Printf("[relay] Applied Prometheus bearer auth")
-		return
-	}
-
-	log.Printf("[relay] WARNING: Prometheus target has no auth credentials configured")
-}
-
-// applyProxmoxAuth sets the Proxmox PVE API token header.
-// Format: PVEAPIToken=user@realm!tokenid=secret
-func applyProxmoxAuth(req *http.Request, target *TargetProfile, creds map[string]string) {
-	// token_id is stored in target_config (e.g. "api@pam!forgeagent")
-	// token_secret is stored in encrypted credentials
-	var tokenID string
-	if tc := target.TargetConfig; tc != nil {
-		if v, ok := tc["token_id"].(string); ok {
-			tokenID = v
-		}
-	}
-	// Fallback: check creds for backward compatibility
-	if tokenID == "" {
-		tokenID = creds["token_id"]
-	}
-	tokenSecret := creds["token_secret"]
-
-	if tokenID == "" {
-		log.Printf("[relay] WARNING: Proxmox target missing token_id in target_config and creds")
-		return
-	}
-	if tokenSecret == "" {
-		log.Printf("[relay] WARNING: Proxmox target missing token_secret in credentials")
-		return
-	}
-
-	// Format matches proxmox.go snapshot collector: PVEAPIToken=user@realm!tokenname=secret
-	header := fmt.Sprintf("PVEAPIToken=%s=%s", tokenID, tokenSecret)
-	req.Header.Set("Authorization", header)
-	log.Printf("[relay] Applied Proxmox API token auth from target_config + encrypted secret")
-}
+// NOTE: vendor auth overrides live in the vendor extension file, which is
+// excluded from the SAN-only public build.
 
 // buildHTTPClient creates an HTTP client respecting TLS and proxy config.
 func buildHTTPClient(target *TargetProfile) *http.Client {

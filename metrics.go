@@ -210,8 +210,8 @@ func (m *MetricsRegistry) DumpTargetSummary() {
 // TimeSubCall is a convenience function for timing a sub-call within an adapter.
 // Usage:
 //
-//	result, metric := TimeSubCall("hosts", func() (map[string]interface{}, error) {
-//	    return a.apiGet("/api/nutanix/v2/hosts/")
+//	result, metric := TimeSubCall("chassis", func() (map[string]interface{}, error) {
+//	    return a.apiGet("/rest/running/brocade-chassis/chassis")
 //	})
 func TimeSubCall(name string, fn func() (map[string]interface{}, error)) (map[string]interface{}, SubCallMetric) {
 	start := time.Now()

@@ -214,11 +214,9 @@ func MustEnroll(store *Store, backendURL string) (*HostState, error) {
 	return EnrollHost(store, backendURL, bootstrapToken, label)
 }
 
-// registeredAdapterTypes returns the list of built-in adapter types.
+// registeredAdapterTypes returns the target types this build supports. It
+// tracks SupportedTargetTypes (build-tagged), so the SAN-only build reports
+// only its SAN targets rather than a hardcoded list.
 func registeredAdapterTypes() []string {
-	return []string{
-		"proxmox",
-		"truenas",
-		// Future adapters registered here
-	}
+	return append([]string(nil), SupportedTargetTypes...)
 }

@@ -53,93 +53,11 @@ type TargetAuthSpec struct {
 	Description      string
 }
 
-// targetAuthRegistry maps target types to their auth specifications.
-var targetAuthRegistry = map[string]TargetAuthSpec{
-	"proxmox": {
-		TargetType:       "proxmox",
-		AllowedAuthTypes: []AuthType{AuthTypeAPIToken, AuthTypeUserPassword},
-		RequiredCredKeys: []string{}, // varies by auth type
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Proxmox VE hypervisor",
-	},
-	"truenas": {
-		TargetType:       "truenas",
-		AllowedAuthTypes: []AuthType{AuthTypeAPIToken},
-		RequiredCredKeys: []string{"api_token"},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "TrueNAS SCALE/CORE storage",
-	},
-	"nutanix": {
-		TargetType:       "nutanix",
-		AllowedAuthTypes: []AuthType{AuthTypeUserPassword},
-		RequiredCredKeys: []string{"username", "password"},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Nutanix AHV/Prism",
-	},
-	"pure-storage": {
-		TargetType:       "pure-storage",
-		AllowedAuthTypes: []AuthType{AuthTypeAPIToken},
-		RequiredCredKeys: []string{"api_token"},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Pure Storage FlashArray/FlashBlade",
-	},
-	"netapp-ontap": {
-		TargetType:       "netapp-ontap",
-		AllowedAuthTypes: []AuthType{AuthTypeUserPassword, AuthTypeAPIToken},
-		RequiredCredKeys: []string{},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "NetApp ONTAP",
-	},
-	"powerstore": {
-		TargetType:       "powerstore",
-		AllowedAuthTypes: []AuthType{AuthTypeUserPassword},
-		RequiredCredKeys: []string{"username", "password"},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Dell PowerStore",
-	},
-	"powermax": {
-		TargetType:       "powermax",
-		AllowedAuthTypes: []AuthType{AuthTypeUserPassword, AuthTypeAPIToken},
-		RequiredCredKeys: []string{},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Dell PowerMax (Unisphere)",
-	},
-	"powerflex": {
-		TargetType:       "powerflex",
-		AllowedAuthTypes: []AuthType{AuthTypeUserPassword},
-		RequiredCredKeys: []string{"username", "password"},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Dell PowerFlex (VxFlex)",
-	},
-	"ollama": {
-		TargetType:       "ollama",
-		AllowedAuthTypes: []AuthType{AuthTypeLocalTrusted, AuthTypeNone},
-		RequiredCredKeys: []string{},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Ollama local LLM inference",
-	},
-	"prometheus": {
-		TargetType:       "prometheus",
-		AllowedAuthTypes: []AuthType{AuthTypeNone, AuthTypeHeaderBased, AuthTypeUserPassword},
-		RequiredCredKeys: []string{},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Prometheus monitoring",
-	},
-	"grafana": {
-		TargetType:       "grafana",
-		AllowedAuthTypes: []AuthType{AuthTypeAPIToken, AuthTypeServiceAccount},
-		RequiredCredKeys: []string{"api_key"},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Grafana dashboards",
-	},
-	"generic-http": {
-		TargetType:       "generic-http",
-		AllowedAuthTypes: []AuthType{AuthTypeHeaderBased, AuthTypeAPIToken, AuthTypeNone},
-		RequiredCredKeys: []string{},
-		DefaultMode:      ProfileModeReadOnly,
-		Description:      "Generic HTTP endpoint (guardrailed)",
-	},
-}
+// targetAuthRegistry maps target types to their auth specifications. Its
+// contents are build-tagged: validation_registry_full.go (default) carries the
+// complete multi-target set; validation_registry_sanonly.go (public SAN-only
+// build) carries just the SAN set. Kept out of this file so the SAN-only
+// distribution never advertises non-SAN target support.
 
 // GetTargetAuthSpec returns the auth spec for a target type, or nil if unknown.
 func GetTargetAuthSpec(targetType string) *TargetAuthSpec {

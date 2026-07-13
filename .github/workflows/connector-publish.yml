@@ -124,7 +124,7 @@ jobs:
             org.opencontainers.image.source=https://github.com/filterrex-ai/connector-agent
             org.opencontainers.image.description=FilterREX-AI Connector Host — Multi-Target Agent
             org.opencontainers.image.vendor=FilterREX-AI
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=Apache-2.0
 
       # ── Cosign: sign Docker image (keyless via GitHub OIDC) ──
       - name: Install cosign
