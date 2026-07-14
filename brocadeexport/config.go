@@ -56,6 +56,33 @@ type TargetConfig struct {
 	FID            *int   `json:"fid,omitempty"`
 	PortRange      string `json:"port_range,omitempty"`
 	Notes          string `json:"notes,omitempty"`
+
+	// REST is the optional HTTPS live-query binding for this switch. When
+	// present it enables the Workbench live-query path via the connector
+	// (see docs/brocade-target-two-path-auth.md). The password is never
+	// inlined here — it must live in a 0600 file referenced by PasswordFile.
+	// This block is parsed and reported in heartbeat readiness but is not yet
+	// consumed by the live-query executor in this build (ships in preview.3).
+	REST *RESTConfig `json:"rest,omitempty"`
+}
+
+// RESTConfig describes the HTTPS REST binding for a Brocade switch.
+//
+// TransportMode is the single source of truth for the transport policy:
+//
+//	"https-verified"      — production; HTTPS with TLS certificate verification.
+//	"https-lab-insecure"  — lab only; requires InsecureTLSLabOnly=true.
+//	"http-lab-insecure"   — lab only; requires InsecureHTTPLabOnly=true.
+//
+// Only "https-verified" reports production-ready in the heartbeat.
+type RESTConfig struct {
+	TransportMode       string `json:"transport_mode,omitempty"`
+	Port                int    `json:"port,omitempty"`
+	Username            string `json:"username,omitempty"`
+	PasswordFile        string `json:"password_file,omitempty"`
+	CAFile              string `json:"ca_file,omitempty"`
+	InsecureTLSLabOnly  bool   `json:"insecure_tls_lab_only,omitempty"`
+	InsecureHTTPLabOnly bool   `json:"insecure_http_lab_only,omitempty"`
 }
 
 
