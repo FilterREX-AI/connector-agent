@@ -1,7 +1,30 @@
-# brocadeexport — local "Export Brocade Evidence Bundle" operation (Phase 3B-3)
+# brocadeexport — Brocade Evidence Bundle production
 
-The agent's first product-facing, **local-only** operation. It composes the two
-already-proven pieces into a deliberate operator action:
+`brocadeexport` composes `brocadecli` + `evidencebundle` into a single
+read-only capture pipeline. It has two callers:
+
+1. **Local CLI (`connector-agent export-brocade-bundle`)** — the operator
+   invokes it directly on the agent host. This mode is always available and
+   is the only path when the connector is in LAN-only mode.
+2. **Server-initiated collection** — in connected mode, the
+   `agentevidence` handler polls `/agent-evidence-claim`; when an authorized
+   FilterREX delivery user has dispatched a job for a Brocade target, the
+   handler calls this same producer, hashes the ZIP, requests a short-lived
+   signed upload URL, and posts it back for automatic attachment to the
+   originating service request.
+
+Guarantees (both callers):
+- No inbound connector ports; the connected-mode trigger uses the existing
+  outbound-only relay poll.
+- Only the embedded read-only Brocade command profile is executed.
+- Collection must be initiated by an authorized user (local operator, or a
+  server dispatch by admin/delivery_operator).
+- Every server-initiated job is scoped to one organization, one service
+  request, one connector, and one target.
+- LAN-only mode strictly refuses server-initiated collection and never
+  uploads a bundle.
+
+
 
 ```text
 brocadecli      → read-only SSH capture of raw Brocade CLI output
