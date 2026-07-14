@@ -120,6 +120,27 @@ docker logs filterrex-connector
 **Expected:** `[host] FilterREX Connector Host v0.7.x starting`
 **Problem:** `[agent] FilterREX Local Connector v0.1.0` → stale image, see fix above.
 
+### GHCR reports `unauthorized`
+
+The FilterREX connector image is publicly available and does **not** require `docker login`.
+
+Confirm you are using the exact image and version:
+
+```bash
+docker pull \
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:v0.1.0-preview.1
+```
+
+If Docker previously authenticated to GHCR with another account, clear that session and retry:
+
+```bash
+docker logout ghcr.io
+docker pull \
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:v0.1.0-preview.1
+```
+
+An `unauthorized` response normally means the package is not public, or the requested image path/version is incorrect.
+
 ## Architecture
 
 - **Outbound-only** — no inbound ports needed
