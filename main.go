@@ -358,10 +358,27 @@ func main() {
 		syncManager.Start(syncInterval)
 		audit.Info("sync.reconciled", "Desired-state sync enabled", F("interval", syncInterval.String()))
 		syncMgrPtr = syncManager
+
+		// Wire agent-evidence collection into the existing outbound poll.
+		// The handler is invoked by SyncManager.commandPollLoop each tick;
+		// see tickAgentEvidence. It is single-flight and never blocks.
+		initAgentEvidenceRunner(
+			backendURL,
+			supervisor.GetConnectorToken,
+			HostVersion,
+			func() bool {
+				if st := supervisor.GetState(); st != nil {
+					return st.Config.LanOnly
+				}
+				return false
+			},
+		)
+
 	} else {
 		audit.Warn("sync.error", "No connector token — desired-state sync disabled")
 		audit.Info("host.config_loaded", "Enroll the host to enable remote management")
 	}
+
 
 	// ── Update Manager ──
 	var updateManager *UpdateManager

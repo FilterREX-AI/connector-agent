@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+
+
 // Supervisor manages the lifecycle of all target workers.
 type Supervisor struct {
 	mu            sync.RWMutex
@@ -909,6 +911,11 @@ func (s *Supervisor) IsAdapterSupported(targetType string) bool {
 }
 
 // BuildCapabilityManifest produces the runtime capability manifest for control-plane reporting.
+//
+// `Capabilities` lists compiled-in features (e.g. collect_brocade_evidence_bundle_v1).
+// `CapabilityStatus` reports per-capability LOCAL readiness (config valid,
+// keys present, target-profile mapping). The control-plane dispatch RPC uses
+// both to distinguish agent_update_required from agent_configuration_required.
 func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -934,10 +941,28 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 		updatePolicy = s.state.Update.UpdatePolicy
 	}
 
+	lanOnly := false
+	if s.state != nil && s.state.Config.LanOnly {
+		lanOnly = true
+	}
+
+
+	// Binary capabilities compiled into this build. Add new entries here
+	// once their agent-side implementation ships; DO NOT gate this list on
+	// local readiness — that's what CapabilityStatus reports.
+	binaryCaps := []string{CapabilityCollectBrocadeEvidenceBundleV1}
+
+	capStatus := map[string]CapabilityStatusInfo{
+		CapabilityCollectBrocadeEvidenceBundleV1: evaluateBrocadeCapabilityStatus(lanOnly),
+	}
+
 	return HostCapabilityManifest{
 		AgentVersion:      HostVersion,
 		SupportedAdapters: adapters,
 		UpdatePolicy:      updatePolicy,
 		OpsEnabledRuntime: false,
+		Capabilities:      binaryCaps,
+		CapabilityStatus:  capStatus,
 	}
 }
+

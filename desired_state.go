@@ -215,6 +215,13 @@ func (sm *SyncManager) commandPollLoop(ctx context.Context) {
 			fastUntil = time.Now().Add(fastDuration)
 		}
 
+		// Piggyback the agent-evidence claim/produce/upload cycle on the
+		// existing outbound poll so we don't spin up a second goroutine
+		// with duplicate lifecycle, backoff, and authentication paths.
+		// The tick is single-flight and non-blocking; it returns immediately
+		// when idle or when a bundle is already in progress.
+		tickAgentEvidence(ctx)
+
 		if time.Now().Before(fastUntil) {
 			pollInterval = fastInterval
 		} else {
@@ -222,6 +229,7 @@ func (sm *SyncManager) commandPollLoop(ctx context.Context) {
 		}
 	}
 }
+
 
 func (sm *SyncManager) run(ctx context.Context) {
 	defer close(sm.done)

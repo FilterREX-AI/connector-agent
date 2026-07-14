@@ -37,11 +37,18 @@ const AuditLogName = "brocade-export-audit.jsonl"
 
 // TargetConfig is one Brocade switch in the local export config. It maps to a
 // brocadecli.BrocadeTarget; no cloud credential storage is involved.
+//
+// TargetProfileID links this local switch entry to the FilterREX
+// connector_target_profiles row it corresponds to. It is REQUIRED for
+// server-initiated (agent-evidence) collection so the agent can resolve a
+// dispatched job's target_profile_id to a local SSH config; it is OPTIONAL
+// for the local `export-brocade-bundle` CLI.
 type TargetConfig struct {
-	SwitchName string `json:"switch_name"`
-	Host       string `json:"host"`
-	Username   string `json:"username"`
-	SSHKeyPath string `json:"ssh_key_path"`
+	SwitchName      string `json:"switch_name"`
+	Host            string `json:"host"`
+	Username        string `json:"username"`
+	SSHKeyPath      string `json:"ssh_key_path"`
+	TargetProfileID string `json:"target_profile_id,omitempty"`
 	// KnownHostsPath overrides the top-level ExportConfig.KnownHostsPath for
 	// this target. Host-key verification is always required.
 	KnownHostsPath string `json:"known_hosts_path,omitempty"`
@@ -50,6 +57,7 @@ type TargetConfig struct {
 	PortRange      string `json:"port_range,omitempty"`
 	Notes          string `json:"notes,omitempty"`
 }
+
 
 // ExportConfig is the local-only configuration for the export operation. It is
 // loaded from a JSON file on the agent host (no YAML dependency is added). The

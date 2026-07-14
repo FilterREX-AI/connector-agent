@@ -318,13 +318,30 @@ type AdapterCapabilityInfo struct {
 }
 
 // HostCapabilityManifest is the runtime support report sent to the control plane.
+//
+// `Capabilities` advertises what the BINARY supports (compiled-in features
+// such as "collect_brocade_evidence_bundle_v1"). `CapabilityStatus` reports
+// per-capability LOCAL READINESS (config valid, keys present, target profiles
+// mapped) — the dispatch RPC uses these together to distinguish
+// `agent_update_required` from `agent_configuration_required`.
 type HostCapabilityManifest struct {
-	AgentVersion       string                  `json:"agent_version"`
-	SupportedAdapters  []AdapterCapabilityInfo  `json:"supported_adapters"`
-	UpdatePolicy       string                  `json:"update_policy"`
-	UpdateChannel      string                  `json:"update_channel,omitempty"`
-	OpsEnabledRuntime  bool                    `json:"ops_enabled_runtime"` // false until ops is implemented
+	AgentVersion       string                          `json:"agent_version"`
+	SupportedAdapters  []AdapterCapabilityInfo         `json:"supported_adapters"`
+	UpdatePolicy       string                          `json:"update_policy"`
+	UpdateChannel      string                          `json:"update_channel,omitempty"`
+	OpsEnabledRuntime  bool                            `json:"ops_enabled_runtime"`
+	Capabilities       []string                        `json:"capabilities,omitempty"`
+	CapabilityStatus   map[string]CapabilityStatusInfo `json:"capability_status,omitempty"`
 }
+
+// CapabilityStatusInfo is one capability's per-host runtime readiness.
+type CapabilityStatusInfo struct {
+	Enabled               bool     `json:"enabled"`
+	ConfigurationState    string   `json:"configuration_state"` // "ready" | "not_configured" | "invalid" | "lan_only"
+	ReadyTargetProfileIDs []string `json:"ready_target_profile_ids,omitempty"`
+	Reason                string   `json:"reason,omitempty"`
+}
+
 
 // ── Host State (persisted) ──
 
