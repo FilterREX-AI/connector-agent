@@ -18,19 +18,22 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 type BrocadeAdapter struct {
-	profile        *TargetProfile
-	client         *http.Client
-	baseURL        string
-	user           string
-	pass           string
-	token          string
-	lastTLSState   tls.ConnectionState
-	lastTLSStateOK bool
+	profile                    *TargetProfile
+	client                     *http.Client
+	baseURL                    string
+	user                       string
+	pass                       string
+	token                      string
+	lastTLSState               tls.ConnectionState
+	lastTLSStateOK             bool
+	switchStateFallbackLogOnce sync.Once
 }
 
 func NewBrocadeAdapter(profile *TargetProfile) (TargetAdapter, error) {
@@ -112,6 +115,19 @@ func (a *BrocadeAdapter) Collect() (map[string]interface{}, error) {
 
 	snapshotData := normalizeBrocadeSnapshot(chassis, switchInfo, ports, media, zoneConfig, definedConfig, fabricInfo, fru)
 
+	// One-shot diagnostic: on FOS builds where switch-state is absent, log the
+	// field we actually derived switchState from so operators can confirm.
+	if src, _ := snapshotData["_switchStateSource"].(string); src != "" && src != "switch-state" {
+		state, _ := snapshotData["switchState"].(string)
+		raw := snapshotData["_switchStateRaw"]
+		a.switchStateFallbackLogOnce.Do(func() {
+			log.Printf("[brocade:%s] switch-state absent; derived switchState=%s source=%s raw=%v",
+				a.profile.Name, state, src, raw)
+		})
+	}
+	delete(snapshotData, "_switchStateSource")
+	delete(snapshotData, "_switchStateRaw")
+
 	// Build alerts from normalized data
 	var alerts []map[string]interface{}
 	if pf, _ := snapshotData["portsFaulty"].(int); pf > 0 {
@@ -176,9 +192,9 @@ func extractBrocadeSignals(data map[string]interface{}) []SnapshotSignal {
 	var sigs []SnapshotSignal
 
 	switchState, hasSwitch := data["switchState"].(string)
-	if !hasSwitch || switchState == "" {
-		// switchState absent — the switch-info API didn't return switch-state field.
-		// Treat as unknown, not healthy, so signal rollup always has something.
+	if !hasSwitch || switchState == "" || strings.EqualFold(switchState, "unknown") {
+		// switchState absent or explicitly unknown — no health field on the
+		// switch payload. Emit a rollup warning so cloud always has a signal.
 		sigs = append(sigs, SnapshotSignal{
 			Key: "switch.unknown", Label: "Switch state not reported",
 			Value: "unknown", Severity: "warning",
@@ -415,26 +431,14 @@ func normalizeBrocadeSnapshot(
 		if v := brocadeStr(sw, "model"); v != "" {
 			out["_switchModelRaw"] = v
 		}
-		// switch-state: 0=undefined,1=offline,2=online,3=testing,4=faulty; also accept string
-		if _, hasState := sw["switch-state"]; hasState {
-			st := brocadeNum(sw, "switch-state")
-			switch int(st) {
-			case 2:
-				out["switchState"] = "Online"
-			case 1:
-				out["switchState"] = "Offline"
-			case 3:
-				out["switchState"] = "Testing"
-			case 4:
-				out["switchState"] = "Faulty"
-			default:
-				if sv := brocadeStr(sw, "switch-state"); sv != "" && sv != "0" {
-					out["switchState"] = sv
-				} else {
-					out["switchState"] = "Unknown"
-				}
-			}
-		}
+		// switch-state: canonical field on FOS 9.x. On FOS 8.2 the switch
+		// resource often omits switch-state and reports health via
+		// operational-status (numeric enum) or is-enabled-state (bool).
+		// See deriveBrocadeSwitchState for the precedence + mapping.
+		derived := deriveBrocadeSwitchState(sw)
+		out["switchState"] = derived.State
+		out["_switchStateSource"] = derived.Source
+		out["_switchStateRaw"] = derived.Raw
 	}
 
 	// ── Chassis info ──
@@ -968,4 +972,176 @@ func brocadeExtractFruItems(fruRaw map[string]interface{}) []interface{} {
 		}
 	}
 	return nil
+}
+
+// derivedSwitchState is the outcome of deriveBrocadeSwitchState. Source is
+// the payload field the state came from ("switch-state", "operational-status",
+// "is-enabled-state", or "" when nothing usable was present).
+type derivedSwitchState struct {
+	State  string
+	Source string
+	Raw    interface{}
+	Found  bool
+}
+
+// deriveBrocadeSwitchState resolves a canonical switchState string from the
+// fibrechannel-switch REST payload. Precedence:
+//  1. switch-state (FOS 9.x canonical)
+//  2. operational-status (FOS 8.2 fallback)
+//  3. is-enabled-state (last-resort administrative fallback)
+//  4. "Unknown"
+//
+// See docs.broadcom.com FOS-82X REST API RM for field semantics.
+func deriveBrocadeSwitchState(sw map[string]interface{}) derivedSwitchState {
+	if raw, ok := sw["switch-state"]; ok {
+		if state, valid := normalizeLegacySwitchState(raw); valid {
+			return derivedSwitchState{State: state, Source: "switch-state", Raw: raw, Found: true}
+		}
+	}
+	if raw, ok := sw["operational-status"]; ok {
+		if state, valid := normalizeSwitchOperationalStatus(raw); valid {
+			return derivedSwitchState{State: state, Source: "operational-status", Raw: raw, Found: true}
+		}
+	}
+	if raw, ok := sw["is-enabled-state"]; ok {
+		if state, valid := normalizeSwitchEnabledState(raw); valid {
+			return derivedSwitchState{State: state, Source: "is-enabled-state", Raw: raw, Found: true}
+		}
+	}
+	return derivedSwitchState{State: "Unknown", Source: "", Raw: nil, Found: false}
+}
+
+// normalizeLegacySwitchState maps the FOS 9.x switch-state field.
+// 0=undefined, 1=offline, 2=online, 3=testing, 4=faulty; strings also accepted.
+func normalizeLegacySwitchState(raw interface{}) (string, bool) {
+	if v, ok := integerValue(raw); ok {
+		switch v {
+		case 0:
+			return "Unknown", true
+		case 1:
+			return "Offline", true
+		case 2:
+			return "Online", true
+		case 3:
+			return "Testing", true
+		case 4:
+			return "Faulty", true
+		default:
+			return fmt.Sprintf("state-%d", v), true
+		}
+	}
+	s, ok := stringValue(raw)
+	if !ok {
+		return "", false
+	}
+	return canonicalizeSwitchStateString(s)
+}
+
+// normalizeSwitchOperationalStatus maps FOS 8.2 operational-status on the
+// switch resource: 0=undefined, 2=enabled/operational, 3=disabled, 7=testing.
+// Numeric 5 (Faulty) is accepted defensively; strings are also accepted.
+func normalizeSwitchOperationalStatus(raw interface{}) (string, bool) {
+	if v, ok := integerValue(raw); ok {
+		switch v {
+		case 0:
+			return "Unknown", true
+		case 2:
+			return "Online", true
+		case 3:
+			return "Offline", true
+		case 5:
+			return "Faulty", true
+		case 7:
+			return "Testing", true
+		default:
+			return fmt.Sprintf("state-%d", v), true
+		}
+	}
+	s, ok := stringValue(raw)
+	if !ok {
+		return "", false
+	}
+	return canonicalizeSwitchStateString(s)
+}
+
+// normalizeSwitchEnabledState maps the boolean administrative is-enabled-state.
+// Only used as a last-resort fallback — it's admin state, not operational.
+func normalizeSwitchEnabledState(raw interface{}) (string, bool) {
+	switch tv := raw.(type) {
+	case bool:
+		if tv {
+			return "Online", true
+		}
+		return "Disabled", true
+	case float64:
+		if tv == 0 {
+			return "Disabled", true
+		}
+		return "Online", true
+	case string:
+		s := strings.ToLower(strings.TrimSpace(tv))
+		switch s {
+		case "true", "1", "enabled", "yes":
+			return "Online", true
+		case "false", "0", "disabled", "no":
+			return "Disabled", true
+		}
+	}
+	return "", false
+}
+
+func canonicalizeSwitchStateString(s string) (string, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "", false
+	}
+	switch strings.ToLower(trimmed) {
+	case "online", "enabled", "up", "operational":
+		return "Online", true
+	case "offline", "disabled", "down":
+		return "Offline", true
+	case "testing", "test":
+		return "Testing", true
+	case "faulty", "fault", "failed":
+		return "Faulty", true
+	case "unknown", "undefined":
+		return "Unknown", true
+	}
+	return trimmed, true
+}
+
+// integerValue extracts an int from JSON-decoded values (float64, int, numeric string).
+func integerValue(raw interface{}) (int, bool) {
+	switch tv := raw.(type) {
+	case float64:
+		if tv != math.Trunc(tv) {
+			return 0, false
+		}
+		return int(tv), true
+	case int:
+		return tv, true
+	case int64:
+		return int(tv), true
+	case string:
+		s := strings.TrimSpace(tv)
+		if s == "" {
+			return 0, false
+		}
+		if n, err := strconv.Atoi(s); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+func stringValue(raw interface{}) (string, bool) {
+	switch tv := raw.(type) {
+	case string:
+		return tv, true
+	case float64:
+		return strconv.FormatFloat(tv, 'f', -1, 64), true
+	case bool:
+		return strconv.FormatBool(tv), true
+	}
+	return "", false
 }
