@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -28,15 +29,70 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/filterrex-ai/connector-agent/targetconfigure"
 )
 
-func main() {
-	// Handle --version flag before any other initialization
-	for _, arg := range os.Args[1:] {
+// displayVersion returns the human-facing version string. HostVersion is
+// injected by the build via -ldflags; CI historically passes the git tag
+// (e.g. "v0.1.0-preview.3"), but a plain "0.1.0-preview.3" is also valid.
+// Always render exactly one leading "v" so the startup banner and --version
+// output never doubles it. Returns "unknown" when HostVersion is empty.
+func displayVersion() string {
+	v := strings.TrimSpace(HostVersion)
+	if v == "" {
+		return "unknown"
+	}
+	if strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "v" + v
+}
+
+// targetConfigureRunner matches targetconfigure.Run so main dispatch can be
+// unit-tested without invoking the real interactive wizard.
+type targetConfigureRunner func(args []string) int
+
+// dispatch handles subcommands that must run WITHOUT starting the supervisor
+// (upload queue, relay, local API). Returns (handled, exitCode).
+//
+// Subcommands here are deliberate local operator actions on the agent host —
+// they are NOT reachable over the cloud relay or the local API. When
+// `handled` is true the caller must os.Exit(exitCode) immediately; the
+// supervisor must not run.
+func dispatch(
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+	runTargetConfigure targetConfigureRunner,
+) (handled bool, exitCode int) {
+	// --version / -v short-circuit
+	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
-			fmt.Printf("FilterREX Connector Host %s\n", HostVersion)
-			os.Exit(0)
+			fmt.Fprintf(stdout, "FilterREX Connector Host %s\n", displayVersion())
+			return true, 0
 		}
+	}
+
+	if len(args) >= 1 && args[0] == "target" {
+		if len(args) >= 2 && args[1] == "configure" {
+			return true, runTargetConfigure(args[2:])
+		}
+		// Fail-closed: unknown "target" subcommand must not silently boot the daemon.
+		sub := ""
+		if len(args) >= 2 {
+			sub = strings.Join(args[1:], " ")
+		}
+		fmt.Fprintf(stderr, "unknown target subcommand: %q (supported: configure)\n", sub)
+		return true, 2
+	}
+
+	return false, 0
+}
+
+func main() {
+	if handled, code := dispatch(os.Args[1:], os.Stdout, os.Stderr, targetconfigure.Run); handled {
+		os.Exit(code)
 	}
 
 	// Handle local, operator-initiated subcommands before starting the
@@ -58,7 +114,7 @@ func main() {
 	InitAuditLogger(configLevel)
 
 	execPath, _ := os.Executable()
-	audit.Info("host.startup", fmt.Sprintf("FilterREX Connector Host v%s starting", HostVersion),
+	audit.Info("host.startup", fmt.Sprintf("FilterREX Connector Host %s starting", displayVersion()),
 		F("executable", execPath),
 		F("pid", os.Getpid()))
 
