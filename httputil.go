@@ -15,9 +15,9 @@
 //
 //   "fos82-legacy"
 //     MinVersion TLS 1.2, cipher list extended with the RSA-KEX / CBC
-//     suites required by Brocade FOS 8.2's default seccryptocfg HTTPS
-//     template. Certificate + hostname verification ON. Never sets
-//     InsecureSkipVerify. Does not fall back to HTTP.
+//     suites implemented by Go and required by Brocade FOS 8.2's default
+//     seccryptocfg HTTPS template. Certificate + hostname verification ON.
+//     Never sets InsecureSkipVerify. Does not fall back to HTTP.
 //
 // InsecureSkipVerify is orthogonal to Policy — it is respected only
 // when the caller explicitly sets it on TLSConfig.
@@ -72,15 +72,21 @@ func tlsConfigForPolicy(policy string, insecureSkipVerify bool) (*tls.Config, er
 			// FOS 8.2 default HTTPS seccryptocfg policy
 			// (!ECDH:!DH:HIGH:-MD5:!CAMELLIA:!SRP:!PSK:!AESGCM:!SSLv3)
 			// collapses HIGH to static-RSA + AES-CBC-SHA/SHA256. We also
-			// keep the two ECDHE-RSA-CBC entries for FOS variants whose
-			// policy still permits ECDHE.
+			// keep ECDHE-RSA-CBC entries for FOS variants whose policy
+			// still permits ECDHE.
 			//
 			// Explicitly listing static-RSA suites in CipherSuites is
 			// sufficient on Go 1.22+ — the GODEBUG=tlsrsakex setting only
 			// governs Go's *default* offer list, not an explicit one.
+			//
+			// TLS_RSA_WITH_AES_256_CBC_SHA256 (0x003D) is a real legacy
+			// suite some OpenSSL policy readouts mention, but Go crypto/tls
+			// does not implement it. We log that fact separately so operators
+			// can recognize switches that require a non-Go-supported suite.
 			CipherSuites: []uint16{
 				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
 				tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
 				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
@@ -170,6 +176,17 @@ func describeCipherSuites(policy string) string {
 		names = append(names, tls.CipherSuiteName(id))
 	}
 	return strings.Join(names, ",")
+}
+
+// describeUnsupportedLegacyCipherSuites documents policy suites that may
+// appear in switch/OpenSSL diagnostics but cannot be offered by Go's TLS
+// implementation. Keep separate from configured_suites so logs never imply
+// the connector offered a cipher it cannot actually negotiate.
+func describeUnsupportedLegacyCipherSuites(policy string) string {
+	if NormalizeTLSPolicy(policy) != TLSPolicyFOS82Legacy {
+		return ""
+	}
+	return "TLS_RSA_WITH_AES_256_CBC_SHA256 (0x003D; not implemented by Go crypto/tls)"
 }
 
 type effectiveTLSConfig struct {

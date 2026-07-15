@@ -59,8 +59,8 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 	}
 
 	policy := NormalizeTLSPolicy(profile.TLS.Policy)
-	log.Printf("[brocade:%s] Verifying FOS REST API at %s (tls_policy=%s tls_verified=%t configured_suites=%q)...",
-		profile.Name, a.baseURL, policy, !profile.TLS.InsecureSkipVerify, describeCipherSuites(policy))
+	log.Printf("[brocade:%s] Verifying FOS REST API at %s (tls_policy=%s tls_verified=%t configured_suites=%q unsupported_suites=%q)...",
+		profile.Name, a.baseURL, policy, !profile.TLS.InsecureSkipVerify, describeCipherSuites(policy), describeUnsupportedLegacyCipherSuites(policy))
 	_, err := a.brocadeGet("/rest/running/brocade-chassis/chassis")
 	if err != nil {
 		// If HTTPS fails with connection refused, try HTTP fallback
@@ -76,8 +76,8 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 			return nil
 		}
 		if strings.Contains(err.Error(), "tls: handshake failure") || strings.Contains(err.Error(), "tls: ") {
-			log.Printf("[brocade.rest_tls_failed] target_id=%s target_name=%s host=%s tls_policy=%s min_version=TLS1.2 max_version=%s configured_suites=%q certificate_verification=%t error=%q",
-				profile.TargetID, profile.Name, brocadeHostLabel(a.baseURL), policy, tlsMaxVersionLabel(policy), describeCipherSuites(policy), !profile.TLS.InsecureSkipVerify, err.Error())
+			log.Printf("[brocade.rest_tls_failed] target_id=%s target_name=%s host=%s tls_policy=%s min_version=TLS1.2 max_version=%s configured_suites=%q unsupported_suites=%q certificate_verification=%t error=%q",
+				profile.TargetID, profile.Name, brocadeHostLabel(a.baseURL), policy, tlsMaxVersionLabel(policy), describeCipherSuites(policy), describeUnsupportedLegacyCipherSuites(policy), !profile.TLS.InsecureSkipVerify, err.Error())
 		}
 		return fmt.Errorf("Brocade FOS REST verification failed: %w", err)
 	}

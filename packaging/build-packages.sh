@@ -32,7 +32,7 @@ BINARY="${3:?Missing path to pre-built binary}"
 PKG_VERSION="${VERSION#v}"
 
 # RPM Version: field forbids '-'. Convert pre-release separator to '~' so that
-# rpm sorts 0.1.0~preview.4 < 0.1.0 (correct pre-release ordering). Deb keeps
+# rpm sorts 0.1.0~preview.5 < 0.1.0 (correct pre-release ordering). Deb keeps
 # the upstream '-' form since dpkg allows it in upstream_version.
 RPM_VERSION="${PKG_VERSION//-/~}"
 
