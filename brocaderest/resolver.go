@@ -56,7 +56,7 @@ const (
 type Operation struct {
 	ID            string
 	Method        string // GET | POST (read-only path only)
-	PathTemplate  string // e.g. "/rest/running/brocade-fibrechannel/fibrechannel-switch"
+	PathTemplate  string // e.g. "/rest/running/brocade-fibrechannel-switch/fibrechannel-switch"
 	AllowedParams map[string]ParamSchema
 	Description   string
 }
@@ -75,7 +75,7 @@ var operations = map[string]Operation{
 	"brocade.switch.status": {
 		ID:           "brocade.switch.status",
 		Method:       "GET",
-		PathTemplate: "/rest/running/brocade-fibrechannel/fibrechannel-switch",
+		PathTemplate: "/rest/running/brocade-fibrechannel-switch/fibrechannel-switch",
 		Description:  "Read-only switch identity + state.",
 	},
 	"brocade.fabric.show": {

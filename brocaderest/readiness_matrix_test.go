@@ -129,7 +129,7 @@ func TestHTTPLabOnlyEndToEnd(t *testing.T) {
 		if gotProto != "http" {
 			t.Fatalf("expected plain http, got %q", gotProto)
 		}
-		if !strings.Contains(gotPath, "/rest/running/brocade-fibrechannel/fibrechannel-switch") {
+		if gotPath != "/rest/running/brocade-fibrechannel-switch/fibrechannel-switch" {
 			t.Fatalf("resolver did not build allowlisted path, got %q", gotPath)
 		}
 		// Basic auth is present, decodable, and carries the exact password
