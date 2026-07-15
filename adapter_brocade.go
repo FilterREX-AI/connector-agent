@@ -70,6 +70,10 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 			log.Printf("[brocade:%s] Connected via HTTP (no TLS)", profile.Name)
 			return nil
 		}
+		if strings.Contains(err.Error(), "tls: handshake failure") || strings.Contains(err.Error(), "tls: ") {
+			log.Printf("[brocade.rest_tls_failed] target_name=%s host=%s tls_policy=%s min_version=TLS1.2 max_version=%s tls_verified=%t configured_suites=%q error=%q",
+				profile.Name, a.baseURL, policy, tlsMaxVersionLabel(policy), !profile.TLS.InsecureSkipVerify, describeCipherSuites(policy), err.Error())
+		}
 		return fmt.Errorf("Brocade FOS REST verification failed: %w", err)
 	}
 	log.Printf("[brocade:%s] Connected via HTTPS (tls_policy=%s)", profile.Name, policy)

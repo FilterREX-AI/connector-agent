@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -64,19 +65,26 @@ func tlsConfigForPolicy(policy string, insecureSkipVerify bool) (*tls.Config, er
 	case TLSPolicyFOS82Legacy:
 		return &tls.Config{
 			MinVersion:         tls.VersionTLS12,
+			MaxVersion:         tls.VersionTLS12,
 			InsecureSkipVerify: insecureSkipVerify,
-			// Minimum FOS 8.2 compatibility set: ECDHE-RSA + RSA-KEX with
-			// AES-CBC-SHA. These are the ciphers Go 1.22+ removed from its
-			// secure defaults but FOS 8.2's default HTTPS seccryptocfg
-			// template still requires. Keep this list tight — extend only
-			// when a specific target proves it needs more.
+			// FOS 8.2 default HTTPS seccryptocfg policy
+			// (!ECDH:!DH:HIGH:-MD5:!CAMELLIA:!SRP:!PSK:!AESGCM:!SSLv3)
+			// collapses HIGH to static-RSA + AES-CBC-SHA/SHA256. We also
+			// keep the two ECDHE-RSA-CBC entries for FOS variants whose
+			// policy still permits ECDHE.
+			//
+			// Explicitly listing static-RSA suites in CipherSuites is
+			// sufficient on Go 1.22+ — the GODEBUG=tlsrsakex setting only
+			// governs Go's *default* offer list, not an explicit one.
 			CipherSuites: []uint16{
 				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
 				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
 				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 			},
 		}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown tls policy: %q", policy)
 	}
@@ -137,3 +145,28 @@ func NewHTTPClient(tlsCfg *TLSConfig, proxy *ProxyConfig, timeout time.Duration)
 func NewHTTPClientFromProfile(profile *TargetProfile, timeout time.Duration) *http.Client {
 	return NewHTTPClient(&profile.TLS, &profile.Proxy, timeout)
 }
+
+// tlsMaxVersionLabel returns a human-readable max version for the given
+// policy, used in structured diagnostic logs.
+func tlsMaxVersionLabel(policy string) string {
+	if NormalizeTLSPolicy(policy) == TLSPolicyFOS82Legacy {
+		return "TLS1.2"
+	}
+	return "TLS1.3"
+}
+
+// describeCipherSuites returns a comma-separated list of IANA cipher
+// suite names for the given policy, or "(go defaults)" for policies
+// that leave CipherSuites nil.
+func describeCipherSuites(policy string) string {
+	cfg, err := tlsConfigForPolicy(NormalizeTLSPolicy(policy), false)
+	if err != nil || cfg == nil || len(cfg.CipherSuites) == 0 {
+		return "(go defaults)"
+	}
+	names := make([]string, 0, len(cfg.CipherSuites))
+	for _, id := range cfg.CipherSuites {
+		names = append(names, tls.CipherSuiteName(id))
+	}
+	return strings.Join(names, ",")
+}
+
