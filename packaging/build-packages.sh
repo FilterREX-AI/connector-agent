@@ -31,6 +31,11 @@ BINARY="${3:?Missing path to pre-built binary}"
 # Strip leading 'v' from version for package versioning
 PKG_VERSION="${VERSION#v}"
 
+# RPM Version: field forbids '-'. Convert pre-release separator to '~' so that
+# rpm sorts 0.1.0~preview.4 < 0.1.0 (correct pre-release ordering). Deb keeps
+# the upstream '-' form since dpkg allows it in upstream_version.
+RPM_VERSION="${PKG_VERSION//-/~}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUT_DIR="/tmp"
 
@@ -123,7 +128,7 @@ build_deb() {
 build_rpm() {
   echo "── Building .rpm package ──"
 
-  local RPM_NAME="filterrex-connector-${PKG_VERSION}-1.${RPM_ARCH}"
+  local RPM_NAME="filterrex-connector-${RPM_VERSION}-1.${RPM_ARCH}"
 
   # Set up rpmbuild directory structure
   local RPM_TOPDIR="${OUT_DIR}/rpmbuild-${GOARCH}"
@@ -151,7 +156,7 @@ build_rpm() {
   # Build RPM
   rpmbuild \
     --define "_topdir ${RPM_TOPDIR}" \
-    --define "_version ${PKG_VERSION}" \
+    --define "_version ${RPM_VERSION}" \
     --define "_build_arch ${RPM_ARCH}" \
     --define "_stagedir ${STAGE_DIR}" \
     --define "_unitdir ${UNITDIR}" \
