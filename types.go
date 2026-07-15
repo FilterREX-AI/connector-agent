@@ -125,11 +125,31 @@ type TargetProfile struct {
 }
 
 // TLSConfig holds per-target TLS settings.
+//
+// Policy controls the TLS version floor and cipher-suite set. Certificate
+// and hostname verification remain independent of Policy — they are only
+// disabled by explicitly setting InsecureSkipVerify. See NewHTTPClient in
+// httputil.go for the exact per-policy tls.Config.
 type TLSConfig struct {
 	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
 	CACertPath         string `json:"ca_cert_path,omitempty"`
 	ClientCertPath     string `json:"client_cert_path,omitempty"`
 	ClientKeyPath      string `json:"client_key_path,omitempty"`
+
+	// Policy is the named TLS compatibility policy for outbound requests
+	// to this target. Empty value is treated as "modern".
+	//
+	//   "modern"       — MinVersion TLS 1.2, Go's default secure cipher list.
+	//                    Cert + hostname verification ON (unless InsecureSkipVerify).
+	//   "fos82-legacy" — MinVersion TLS 1.2, adds the RSA-KEX / CBC ciphers
+	//                    that Brocade FOS 8.2 default seccryptocfg HTTPS
+	//                    templates require. Cert + hostname verification
+	//                    still ON. Never sets InsecureSkipVerify.
+	//
+	// Prefer fixing the switch (seccryptocfg --apply default_strong) before
+	// enabling fos82-legacy. Selecting the policy is always an explicit
+	// operator action — the agent never auto-downgrades on failure.
+	Policy string `json:"tls_policy,omitempty"`
 }
 
 // ProxyConfig holds optional HTTP proxy settings for a target.

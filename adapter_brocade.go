@@ -53,7 +53,9 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 		a.token = t
 	}
 
-	log.Printf("[brocade:%s] Verifying FOS REST API at %s...", profile.Name, a.baseURL)
+	policy := NormalizeTLSPolicy(profile.TLS.Policy)
+	log.Printf("[brocade:%s] Verifying FOS REST API at %s (tls_policy=%s tls_verified=%t)...",
+		profile.Name, a.baseURL, policy, !profile.TLS.InsecureSkipVerify)
 	_, err := a.brocadeGet("/rest/running/brocade-chassis/chassis")
 	if err != nil {
 		// If HTTPS fails with connection refused, try HTTP fallback
@@ -70,7 +72,7 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 		}
 		return fmt.Errorf("Brocade FOS REST verification failed: %w", err)
 	}
-	log.Printf("[brocade:%s] Connected via HTTPS", profile.Name)
+	log.Printf("[brocade:%s] Connected via HTTPS (tls_policy=%s)", profile.Name, policy)
 	return nil
 }
 
