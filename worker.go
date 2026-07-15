@@ -544,12 +544,16 @@ func (w *Worker) sendHeartbeat() {
 		consecutiveErrors = 0
 	}
 
+	// NOTE: do NOT include "capabilities" here. The connector's binary
+	// capability manifest is advertised exclusively via the desired-state
+	// sync (x-host-capabilities header). Sending adapter feature strings
+	// under the same key would clobber the manifest in older backends and
+	// cause Workbench live queries to fail with agent_update_required.
 	payload := map[string]interface{}{
 		"type":              "heartbeat",
 		"agentVersion":      HostVersion,
 		"targetId":          w.profile.TargetID,
 		"targetType":        w.profile.TargetType,
-		"capabilities":      w.adapter.Capabilities(),
 		"workerStatus":      workerStatus,
 		"consecutiveErrors": consecutiveErrors,
 	}
