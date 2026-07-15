@@ -14,7 +14,7 @@
 
 services:
   filterrex-connector:
-    image: ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.5
+    image: ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.6
     pull_policy: always
     container_name: filterrex-connector
     restart: unless-stopped

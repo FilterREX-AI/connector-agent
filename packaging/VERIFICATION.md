@@ -8,7 +8,7 @@ All release artifacts are signed using [Sigstore cosign](https://docs.sigstore.d
 cosign verify \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp 'github.com/filterrex-ai/connector-agent' \
-  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.5
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.6
 ```
 
 ## Verify Binary Tarball
