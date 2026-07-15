@@ -27,13 +27,13 @@ func contains(s, substr string) bool {
 
 // DesiredStatePayload is the backend → host config-only payload.
 type DesiredStatePayload struct {
-	Revision        int64                `json:"revision"`
-	RevisionHash    string               `json:"revision_hash,omitempty"`
-	HostConfig      *HostConfigOverride  `json:"host_config,omitempty"`
+	Revision        int64                  `json:"revision"`
+	RevisionHash    string                 `json:"revision_hash,omitempty"`
+	HostConfig      *HostConfigOverride    `json:"host_config,omitempty"`
 	Targets         []DesiredTargetProfile `json:"targets"`
-	Policy          *HostPolicy          `json:"policy,omitempty"`
-	WipeInstruction *WipeInstruction     `json:"wipe_instruction,omitempty"`
-	PendingCommands []RelayCommand       `json:"pending_commands,omitempty"`
+	Policy          *HostPolicy            `json:"policy,omitempty"`
+	WipeInstruction *WipeInstruction       `json:"wipe_instruction,omitempty"`
+	PendingCommands []RelayCommand         `json:"pending_commands,omitempty"`
 }
 
 type WipeInstruction struct {
@@ -79,9 +79,9 @@ type DesiredTargetProfile struct {
 }
 
 type CredentialPayload struct {
-	EncryptionMethod string             `json:"encryption_method"`
-	Credentials      map[string]string  `json:"credentials,omitempty"`
-	EncryptedBlob    string             `json:"encrypted_blob,omitempty"`
+	EncryptionMethod string              `json:"encryption_method"`
+	Credentials      map[string]string   `json:"credentials,omitempty"`
+	EncryptedBlob    string              `json:"encrypted_blob,omitempty"`
 	Envelope         *CredentialEnvelope `json:"envelope,omitempty"`
 }
 
@@ -103,20 +103,20 @@ type WipeAckPayload struct {
 // ── Desired-State Sync Loop ──
 
 type SyncManager struct {
-	backend      *BackendClient
-	store        *Store
-	supervisor   *Supervisor
-	validator    *ProfileValidator
-	hostKeyPair  *HostKeyPair
-	relayHandler *RelayHandler
-	interval     time.Duration
-	fastInterval time.Duration
-	cancel       context.CancelFunc
-	done             chan struct{}
-	triggerCh        chan struct{}
-	fastPollUntil    time.Time
-	lastRejected     []RejectedProfile
-	lastStatusPushAt time.Time
+	backend            *BackendClient
+	store              *Store
+	supervisor         *Supervisor
+	validator          *ProfileValidator
+	hostKeyPair        *HostKeyPair
+	relayHandler       *RelayHandler
+	interval           time.Duration
+	fastInterval       time.Duration
+	cancel             context.CancelFunc
+	done               chan struct{}
+	triggerCh          chan struct{}
+	fastPollUntil      time.Time
+	lastRejected       []RejectedProfile
+	lastStatusPushAt   time.Time
 	statusPushInterval time.Duration
 }
 
@@ -140,7 +140,7 @@ func NewSyncManager(backend *BackendClient, store *Store, supervisor *Supervisor
 		fastInterval:       5 * time.Second,
 		statusPushInterval: 2 * time.Minute,
 		done:               make(chan struct{}),
-		triggerCh:           make(chan struct{}, 1),
+		triggerCh:          make(chan struct{}, 1),
 	}
 }
 
@@ -229,7 +229,6 @@ func (sm *SyncManager) commandPollLoop(ctx context.Context) {
 		}
 	}
 }
-
 
 func (sm *SyncManager) run(ctx context.Context) {
 	defer close(sm.done)
@@ -789,11 +788,11 @@ func (sm *SyncManager) applyDesiredTargets(desired []DesiredTargetProfile, revis
 
 func desiredToInternal(d DesiredTargetProfile) TargetProfile {
 	return TargetProfile{
-		TargetID:               d.TargetID,
-		Name:                   d.Name,
-		TargetType:             d.TargetType,
-		Mode:                   string(d.Mode),
-		Enabled:                d.Enabled,
+		TargetID:   d.TargetID,
+		Name:       d.Name,
+		TargetType: d.TargetType,
+		Mode:       string(d.Mode),
+		Enabled:    d.Enabled,
 		// Only carry over status values that are
 		// meaningful for agent lifecycle decisions.
 		// "paused" echoed from the cloud is only
@@ -835,6 +834,9 @@ func extractCredsFromPayload(cp *CredentialPayload) map[string]string {
 
 func profileChanged(current *TargetProfile, desired *TargetProfile) bool {
 	if current.Endpoint != desired.Endpoint {
+		return true
+	}
+	if !effectiveTLSConfigsEqual(effectiveTLSConfigFromProfile(current), effectiveTLSConfigFromProfile(desired)) {
 		return true
 	}
 	if current.PollIntervalSecs != desired.PollIntervalSecs {

@@ -7,6 +7,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,17 +16,21 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/url"
 	"strings"
 	"time"
 )
 
 type BrocadeAdapter struct {
-	profile *TargetProfile
-	client  *http.Client
-	baseURL string
-	user    string
-	pass    string
-	token   string
+	profile        *TargetProfile
+	client         *http.Client
+	baseURL        string
+	user           string
+	pass           string
+	token          string
+	lastTLSState   tls.ConnectionState
+	lastTLSStateOK bool
 }
 
 func NewBrocadeAdapter(profile *TargetProfile) (TargetAdapter, error) {
@@ -54,8 +59,8 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 	}
 
 	policy := NormalizeTLSPolicy(profile.TLS.Policy)
-	log.Printf("[brocade:%s] Verifying FOS REST API at %s (tls_policy=%s tls_verified=%t)...",
-		profile.Name, a.baseURL, policy, !profile.TLS.InsecureSkipVerify)
+	log.Printf("[brocade:%s] Verifying FOS REST API at %s (tls_policy=%s tls_verified=%t configured_suites=%q)...",
+		profile.Name, a.baseURL, policy, !profile.TLS.InsecureSkipVerify, describeCipherSuites(policy))
 	_, err := a.brocadeGet("/rest/running/brocade-chassis/chassis")
 	if err != nil {
 		// If HTTPS fails with connection refused, try HTTP fallback
@@ -71,12 +76,17 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 			return nil
 		}
 		if strings.Contains(err.Error(), "tls: handshake failure") || strings.Contains(err.Error(), "tls: ") {
-			log.Printf("[brocade.rest_tls_failed] target_name=%s host=%s tls_policy=%s min_version=TLS1.2 max_version=%s tls_verified=%t configured_suites=%q error=%q",
-				profile.Name, a.baseURL, policy, tlsMaxVersionLabel(policy), !profile.TLS.InsecureSkipVerify, describeCipherSuites(policy), err.Error())
+			log.Printf("[brocade.rest_tls_failed] target_id=%s target_name=%s host=%s tls_policy=%s min_version=TLS1.2 max_version=%s configured_suites=%q certificate_verification=%t error=%q",
+				profile.TargetID, profile.Name, brocadeHostLabel(a.baseURL), policy, tlsMaxVersionLabel(policy), describeCipherSuites(policy), !profile.TLS.InsecureSkipVerify, err.Error())
 		}
 		return fmt.Errorf("Brocade FOS REST verification failed: %w", err)
 	}
-	log.Printf("[brocade:%s] Connected via HTTPS (tls_policy=%s)", profile.Name, policy)
+	if a.lastTLSStateOK {
+		log.Printf("[brocade.rest_tls_connected] target_id=%s target_name=%s tls_policy=%s tls_version=%s negotiated_suite=%s certificate_verified=%t",
+			profile.TargetID, profile.Name, policy, tlsVersionLabel(a.lastTLSState.Version), tls.CipherSuiteName(a.lastTLSState.CipherSuite), !profile.TLS.InsecureSkipVerify)
+	} else {
+		log.Printf("[brocade:%s] Connected via HTTPS (tls_policy=%s)", profile.Name, policy)
+	}
 	return nil
 }
 
@@ -244,17 +254,17 @@ func extractBrocadeSignals(data map[string]interface{}) []SnapshotSignal {
 				if status == "alarm" {
 					detailedSfpSignals++
 					sigs = append(sigs, SnapshotSignal{
-						Key: "sfp.alarm",
-						Label: fmt.Sprintf("SFP %s: %s", port, strings.Join(reasons, ", ")),
-						Entity: port,
+						Key:      "sfp.alarm",
+						Label:    fmt.Sprintf("SFP %s: %s", port, strings.Join(reasons, ", ")),
+						Entity:   port,
 						Severity: "critical",
 					})
 				} else if status == "warning" {
 					detailedSfpSignals++
 					sigs = append(sigs, SnapshotSignal{
-						Key: "sfp.out_of_range",
-						Label: fmt.Sprintf("SFP %s: %s", port, strings.Join(reasons, ", ")),
-						Entity: port,
+						Key:      "sfp.out_of_range",
+						Label:    fmt.Sprintf("SFP %s: %s", port, strings.Join(reasons, ", ")),
+						Entity:   port,
 						Severity: "warning",
 					})
 				}
@@ -287,24 +297,24 @@ func extractBrocadeSignals(data map[string]interface{}) []SnapshotSignal {
 			}
 			if failedPsus > 0 {
 				sigs = append(sigs, SnapshotSignal{
-					Key: "hardware.psu.failed",
-					Label: fmt.Sprintf("%d PSU(s) not operational", failedPsus),
-					Value: fmt.Sprintf("%d", failedPsus),
+					Key:      "hardware.psu.failed",
+					Label:    fmt.Sprintf("%d PSU(s) not operational", failedPsus),
+					Value:    fmt.Sprintf("%d", failedPsus),
 					Severity: "critical",
 				})
 			} else if psuCount == 1 {
 				sigs = append(sigs, SnapshotSignal{
-					Key: "hardware.psu.missing",
-					Label: "Single PSU — no power redundancy",
-					Value: "1",
+					Key:      "hardware.psu.missing",
+					Label:    "Single PSU — no power redundancy",
+					Value:    "1",
 					Severity: "warning",
 				})
 			}
 			if failedFans > 0 {
 				sigs = append(sigs, SnapshotSignal{
-					Key: "hardware.fan.failed",
-					Label: fmt.Sprintf("%d fan(s) not operational", failedFans),
-					Value: fmt.Sprintf("%d", failedFans),
+					Key:      "hardware.fan.failed",
+					Label:    fmt.Sprintf("%d fan(s) not operational", failedFans),
+					Value:    fmt.Sprintf("%d", failedFans),
 					Severity: "critical",
 				})
 			}
@@ -730,6 +740,16 @@ func (a *BrocadeAdapter) brocadeGet(path string) (map[string]interface{}, error)
 	if err != nil {
 		return nil, err
 	}
+	a.lastTLSStateOK = false
+	trace := &httptrace.ClientTrace{
+		TLSHandshakeDone: func(cs tls.ConnectionState, err error) {
+			if err == nil {
+				a.lastTLSState = cs
+				a.lastTLSStateOK = true
+			}
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	if a.token != "" {
 		req.Header.Set("Authorization", "Bearer "+a.token)
 	} else if a.user != "" && a.pass != "" {
@@ -873,6 +893,29 @@ func isConnRefused(err error) bool {
 		return opErr.Op == "dial" && strings.Contains(opErr.Err.Error(), "connection refused")
 	}
 	return strings.Contains(err.Error(), "connection refused")
+}
+
+func brocadeHostLabel(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err == nil && u.Host != "" {
+		return u.Host
+	}
+	return endpoint
+}
+
+func tlsVersionLabel(version uint16) string {
+	switch version {
+	case tls.VersionTLS10:
+		return "TLS1.0"
+	case tls.VersionTLS11:
+		return "TLS1.1"
+	case tls.VersionTLS12:
+		return "TLS1.2"
+	case tls.VersionTLS13:
+		return "TLS1.3"
+	default:
+		return fmt.Sprintf("0x%04x", version)
+	}
 }
 
 // toInt extracts an int from an interface{} that may be int, float64, or int64.

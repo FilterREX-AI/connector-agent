@@ -27,8 +27,10 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -170,3 +172,66 @@ func describeCipherSuites(policy string) string {
 	return strings.Join(names, ",")
 }
 
+type effectiveTLSConfig struct {
+	Policy             string
+	ServerName         string
+	MinVersion         uint16
+	MaxVersion         uint16
+	CipherIDs          []uint16
+	TrustRef           string
+	InsecureSkipVerify bool
+}
+
+func effectiveTLSConfigFromProfile(profile *TargetProfile) effectiveTLSConfig {
+	if profile == nil {
+		return effectiveTLSConfig{Policy: TLSPolicyModern}
+	}
+
+	policy := NormalizeTLSPolicy(profile.TLS.Policy)
+	cfg, err := tlsConfigForPolicy(policy, profile.TLS.InsecureSkipVerify)
+	if err != nil || cfg == nil {
+		cfg = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: profile.TLS.InsecureSkipVerify}
+	}
+
+	cipherIDs := append([]uint16(nil), cfg.CipherSuites...)
+	sort.Slice(cipherIDs, func(i, j int) bool { return cipherIDs[i] < cipherIDs[j] })
+
+	return effectiveTLSConfig{
+		Policy:             policy,
+		ServerName:         tlsServerNameFromEndpoint(profile.Endpoint),
+		MinVersion:         cfg.MinVersion,
+		MaxVersion:         cfg.MaxVersion,
+		CipherIDs:          cipherIDs,
+		TrustRef:           strings.Join([]string{profile.TLS.CACertPath, profile.TLS.ClientCertPath, profile.TLS.ClientKeyPath}, "\x00"),
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+}
+
+func effectiveTLSConfigsEqual(a, b effectiveTLSConfig) bool {
+	if a.Policy != b.Policy || a.ServerName != b.ServerName || a.MinVersion != b.MinVersion ||
+		a.MaxVersion != b.MaxVersion || a.TrustRef != b.TrustRef ||
+		a.InsecureSkipVerify != b.InsecureSkipVerify || len(a.CipherIDs) != len(b.CipherIDs) {
+		return false
+	}
+	for i := range a.CipherIDs {
+		if a.CipherIDs[i] != b.CipherIDs[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func tlsServerNameFromEndpoint(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	if u.Scheme != "https" {
+		return ""
+	}
+	host := u.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	return strings.ToLower(host)
+}

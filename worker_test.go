@@ -52,6 +52,11 @@ func (f *fakeAdapter) HealthCheck() error {
 	return nil
 }
 
+func (f *fakeAdapter) IsClosed() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closed
+}
 
 type fakeBackendPost struct{}
 
@@ -171,7 +176,7 @@ func TestWorkerFailedInitDoesNotEmitRunning(t *testing.T) {
 // with a target. If the deadlock is present, this test will hang and
 // the test runner will time out.
 func TestSupervisorReconcileDoesNotDeadlock(t *testing.T) {
-	store, _ := NewStore("/tmp/filterrex-test-deadlock-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
+	store, _ := NewStore("/tmp/filterrex-test-deadlock-"+fmt.Sprintf("%d", time.Now().UnixNano()), false)
 
 	backend := &BackendClient{BaseURL: "http://localhost:0"}
 	sup := NewSupervisor(store, backend)
@@ -232,7 +237,7 @@ func TestSupervisorReconcileDoesNotDeadlock(t *testing.T) {
 // TestSupervisorMultipleTargetsNoDeadlock verifies that reconciling
 // multiple targets simultaneously does not deadlock.
 func TestSupervisorMultipleTargetsNoDeadlock(t *testing.T) {
-	store, _ := NewStore("/tmp/filterrex-test-multi-" + fmt.Sprintf("%d", time.Now().UnixNano()), false)
+	store, _ := NewStore("/tmp/filterrex-test-multi-"+fmt.Sprintf("%d", time.Now().UnixNano()), false)
 	backend := &BackendClient{BaseURL: "http://localhost:0"}
 	sup := NewSupervisor(store, backend)
 
@@ -390,4 +395,158 @@ func TestWorkerProfileStableAfterTargetRemoval(t *testing.T) {
 	}
 
 	sup.Shutdown()
+}
+
+func TestTLSPolicyOnlyChangeReplacesWorkerAndTransport(t *testing.T) {
+	store, _ := NewStore("/tmp/filterrex-test-tls-policy-"+fmt.Sprintf("%d", time.Now().UnixNano()), false)
+	backend := &BackendClient{BaseURL: "http://localhost:0"}
+	sup := NewSupervisor(store, backend)
+
+	var adaptersMu sync.Mutex
+	var adapters []*fakeAdapter
+	sup.RegisterAdapter("brocade-test", func(p *TargetProfile) (TargetAdapter, error) {
+		adapter := &fakeAdapter{initDelay: 10 * time.Millisecond}
+		adaptersMu.Lock()
+		adapters = append(adapters, adapter)
+		adaptersMu.Unlock()
+		return adapter, nil
+	})
+
+	sup.InitializeWithState(&HostState{
+		Identity: HostIdentity{HostID: "test-tls", ConnectorToken: "test-token", Label: "test"},
+		Config:   DefaultHostConfig(),
+		Targets: []TargetProfile{{
+			TargetID:         "target-tls",
+			TargetType:       "brocade-test",
+			Name:             "TLS Target",
+			Enabled:          true,
+			Endpoint:         "https://switch.example.local",
+			TLS:              TLSConfig{Policy: TLSPolicyModern},
+			PollIntervalSecs: 3600,
+			Status:           TargetStatusPending,
+			ConfigVersion:    1,
+		}},
+		Version: 1,
+	})
+
+	if err := sup.Reconcile(); err != nil {
+		t.Fatalf("initial Reconcile() error: %v", err)
+	}
+	waitForWorkerCount(t, sup, 1)
+
+	adaptersMu.Lock()
+	if len(adapters) != 1 {
+		t.Fatalf("expected 1 adapter after initial reconcile, got %d", len(adapters))
+	}
+	firstAdapter := adapters[0]
+	adaptersMu.Unlock()
+	firstWorker := sup.workers["target-tls"]
+
+	sm := &SyncManager{supervisor: sup}
+	status := sm.applyDesiredTargets([]DesiredTargetProfile{{
+		TargetID:         "target-tls",
+		TargetType:       "brocade-test",
+		Name:             "TLS Target",
+		Mode:             ProfileModeReadOnly,
+		Enabled:          true,
+		Endpoint:         "https://switch.example.local",
+		TLS:              TLSConfig{Policy: TLSPolicyFOS82Legacy},
+		PollIntervalSecs: 3600,
+		AuthType:         "none",
+		Status:           TargetStatusActive,
+		ConfigVersion:    1,
+	}}, 2)
+	if status != "applied" {
+		t.Fatalf("expected applied status, got %s", status)
+	}
+	waitForWorkerCount(t, sup, 1)
+
+	adaptersMu.Lock()
+	if len(adapters) != 2 {
+		t.Fatalf("expected TLS-only update to create a second adapter/transport, got %d", len(adapters))
+	}
+	secondAdapter := adapters[1]
+	adaptersMu.Unlock()
+	if !firstAdapter.IsClosed() {
+		t.Fatal("old adapter was not closed after TLS policy change")
+	}
+	if secondAdapter == firstAdapter {
+		t.Fatal("TLS policy update reused the old adapter")
+	}
+	if sup.workers["target-tls"] == firstWorker {
+		t.Fatal("TLS policy update reused the old worker")
+	}
+
+	status = sm.applyDesiredTargets([]DesiredTargetProfile{{
+		TargetID:         "target-tls",
+		TargetType:       "brocade-test",
+		Name:             "TLS Target",
+		Mode:             ProfileModeReadOnly,
+		Enabled:          true,
+		Endpoint:         "https://switch.example.local",
+		TLS:              TLSConfig{Policy: TLSPolicyFOS82Legacy},
+		Labels:           map[string]string{"note": "metadata-only"},
+		PollIntervalSecs: 3600,
+		AuthType:         "none",
+		Status:           TargetStatusActive,
+		ConfigVersion:    1,
+	}}, 3)
+	if status != "applied" {
+		t.Fatalf("expected applied status for metadata-only update, got %s", status)
+	}
+
+	adaptersMu.Lock()
+	adapterCount := len(adapters)
+	adaptersMu.Unlock()
+	if adapterCount != 2 {
+		t.Fatalf("metadata-only update should not create a new adapter/transport, got %d adapters", adapterCount)
+	}
+	if sup.workers["target-tls"].Adapter() != secondAdapter {
+		t.Fatal("metadata-only update unexpectedly replaced the worker")
+	}
+
+	sup.Shutdown()
+}
+
+func TestProfileChangedDetectsEffectiveTLSConfig(t *testing.T) {
+	base := &TargetProfile{
+		TargetID:         "target-tls",
+		TargetType:       "brocade-test",
+		Name:             "TLS Target",
+		Endpoint:         "https://192.168.40.211:443",
+		TLS:              TLSConfig{Policy: TLSPolicyModern},
+		PollIntervalSecs: 60,
+		Mode:             "readonly",
+		AuthType:         "none",
+	}
+
+	legacy := *base
+	legacy.TLS = TLSConfig{Policy: TLSPolicyFOS82Legacy}
+	if !profileChanged(base, &legacy) {
+		t.Fatal("modern -> fos82-legacy should be considered a profile change")
+	}
+
+	modernAgain := legacy
+	modernAgain.TLS = TLSConfig{Policy: TLSPolicyModern}
+	if !profileChanged(&legacy, &modernAgain) {
+		t.Fatal("fos82-legacy -> modern should be considered a profile change")
+	}
+
+	metadataOnly := *base
+	metadataOnly.Labels = map[string]string{"note": "metadata-only"}
+	if profileChanged(base, &metadataOnly) {
+		t.Fatal("unrelated metadata change should not be considered a transport/profile restart change")
+	}
+}
+
+func waitForWorkerCount(t *testing.T, sup *Supervisor, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if sup.WorkerCount() == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected %d worker(s), got %d", want, sup.WorkerCount())
 }
