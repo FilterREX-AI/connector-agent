@@ -355,11 +355,39 @@ type HostCapabilityManifest struct {
 }
 
 // CapabilityStatusInfo is one capability's per-host runtime readiness.
+//
+// `ReadyTargetProfileIDs` continues to gate the SSH bundle-dispatch RPC.
+// `PerTarget` carries per-target REST readiness for the live-query RPC
+// (`authorize_brocade_live_query`). The two live under the same capability
+// but describe independent transport paths — see the DB column comment on
+// `connector_registrations.capability_status`.
 type CapabilityStatusInfo struct {
-	Enabled               bool     `json:"enabled"`
-	ConfigurationState    string   `json:"configuration_state"` // "ready" | "not_configured" | "invalid" | "lan_only"
-	ReadyTargetProfileIDs []string `json:"ready_target_profile_ids,omitempty"`
-	Reason                string   `json:"reason,omitempty"`
+	Enabled               bool                          `json:"enabled"`
+	ConfigurationState    string                        `json:"configuration_state"` // "ready" | "not_configured" | "invalid" | "lan_only"
+	ReadyTargetProfileIDs []string                      `json:"ready_target_profile_ids,omitempty"`
+	PerTarget             map[string]PerTargetReadiness `json:"per_target,omitempty"`
+	Reason                string                        `json:"reason,omitempty"`
+}
+
+// PerTargetReadiness is the per-target REST readiness snapshot the agent
+// publishes with each heartbeat.
+//
+// IMPORTANT invariants:
+//   - Never populate `reported_at` here. The control plane overwrites it via
+//     `stamp_capability_status_reported_at`; that server timestamp is the
+//     only clock authorization trusts.
+//   - `RESTReady=true` is emitted only after a successful authenticated FOS
+//     REST call. Locally-stale successes (no probe within the registry TTL)
+//     must flip to false before publication.
+//   - `RESTReason`, `LastRESTErrorCode` are stable, sanitized identifiers —
+//     never raw response bodies, credentials, or certificate contents.
+type PerTargetReadiness struct {
+	RESTReady         bool   `json:"rest_ready"`
+	RESTReason        string `json:"rest_reason,omitempty"`
+	RESTSecurityState string `json:"rest_security_state,omitempty"` // production_verified | lab_tls_unverified | lab_http_cleartext | certificate_pinned
+	TLSPolicy         string `json:"tls_policy,omitempty"`
+	LastRESTErrorCode string `json:"last_rest_error_code,omitempty"`
+	LastRESTErrorAt   string `json:"last_rest_error_at,omitempty"`
 }
 
 

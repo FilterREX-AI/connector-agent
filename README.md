@@ -20,7 +20,7 @@ docker run -d --name filterrex-connector \
   --restart unless-stopped \
   -v /etc/filterrex:/etc/filterrex \
   -e FILTERREX_ENROLLMENT_TOKEN='frc_your_token_here' \
-  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8
 ```
 
 ### 3. Assign Brocade Switches
@@ -76,7 +76,7 @@ docker run -d --name filterrex-connector \
   --pull always \
   --restart unless-stopped \
   -v filterrex-config:/etc/filterrex \
-  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8
 ```
 
 > **Note:** The enrollment token is **not** needed for updates. Your host identity and target credentials are persisted in the `filterrex-config` volume and reused automatically.
@@ -106,7 +106,7 @@ docker run -d --name filterrex-connector \
   --restart unless-stopped \
   -v /etc/filterrex:/etc/filterrex \
   -e FILTERREX_ENROLLMENT_TOKEN='frc_your_token_here' \
-  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8
 ```
 
 ### Verify Correct Binary
@@ -117,7 +117,7 @@ After starting, check logs:
 docker logs filterrex-connector
 ```
 
-**Expected:** `[host.startup] FilterREX Connector Host v0.1.0-preview.7 starting`
+**Expected:** `[host.startup] FilterREX Connector Host v0.1.0-preview.8 starting`
 **Problem:** `[agent] FilterREX Local Connector v0.1.0` → stale image, see fix above.
 
 ### GHCR reports `unauthorized`
@@ -128,7 +128,7 @@ Confirm you are using the exact image and version:
 
 ```bash
 docker pull \
-  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8
 ```
 
 If Docker previously authenticated to GHCR with another account, clear that session and retry:
@@ -136,7 +136,7 @@ If Docker previously authenticated to GHCR with another account, clear that sess
 ```bash
 docker logout ghcr.io
 docker pull \
-  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8
 ```
 
 An `unauthorized` response normally means the package is not public, or the requested image path/version is incorrect.
@@ -165,7 +165,7 @@ docker run -d --name filterrex-connector \
   --pull always --restart unless-stopped \
   -v filterrex-config:/etc/filterrex \
   -e FILTERREX_ENROLLMENT_TOKEN='frc_new_token_here' \
-  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7
+  ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8
 ```
 
 **Bind mount / systemd:**
@@ -196,7 +196,7 @@ The `--force-reset-state` flag removes `host.json.enc`, `host.key`, and all file
 ## Releases & Docker Images
 
 - **GitHub Releases**: Pre-built binaries for linux/amd64 and linux/arm64
-- **GHCR**: `ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7`
+- **GHCR**: `ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8`
 
 Docker `:latest` is updated on every sync to main. Tagged releases (e.g. `v0.2.0`) produce versioned images and binary assets.
 

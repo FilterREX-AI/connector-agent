@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 )
@@ -188,6 +189,7 @@ func (s *Supervisor) Reconcile() error {
 				existing.Stop()
 				delete(s.workers, target.TargetID)
 			}
+			DeleteBrocadeRESTReadiness(target.TargetID)
 			continue
 		}
 
@@ -258,6 +260,7 @@ func (s *Supervisor) Reconcile() error {
 			audit.Info("target.removed", "Stopping orphaned worker", F("target_id", targetID))
 			worker.Stop()
 			delete(s.workers, targetID)
+			DeleteBrocadeRESTReadiness(targetID)
 		}
 	}
 
@@ -952,8 +955,32 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 	// local readiness — that's what CapabilityStatus reports.
 	binaryCaps := []string{CapabilityCollectBrocadeEvidenceBundleV1}
 
+	brocade := evaluateBrocadeCapabilityStatus(lanOnly)
+	if lanOnly {
+		// LAN-only mode: explicitly publish false so any prior true readiness
+		// in the persisted status is overwritten by this heartbeat rather than
+		// deep-merged. Enumerate active Brocade targets so the RPC's per_target
+		// key lookup returns a definitive rest_ready=false + reason.
+		blocked := map[string]PerTargetReadiness{}
+		if s.state != nil {
+			for i := range s.state.Targets {
+				t := &s.state.Targets[i]
+				tt := strings.ToLower(t.TargetType)
+				if tt != "brocade" && tt != "brocade-fos" {
+					continue
+				}
+				blocked[t.TargetID] = PerTargetReadiness{
+					RESTReady:  false,
+					RESTReason: "lan_only_mode",
+				}
+			}
+		}
+		brocade.PerTarget = blocked
+	} else {
+		brocade.PerTarget = BrocadeRESTReadinessSnapshot()
+	}
 	capStatus := map[string]CapabilityStatusInfo{
-		CapabilityCollectBrocadeEvidenceBundleV1: evaluateBrocadeCapabilityStatus(lanOnly),
+		CapabilityCollectBrocadeEvidenceBundleV1: brocade,
 	}
 
 	return HostCapabilityManifest{

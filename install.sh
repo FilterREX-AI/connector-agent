@@ -20,7 +20,7 @@
 #
 # Usage — Pinned version:
 #   curl -fsSL https://raw.githubusercontent.com/filterrex-ai/connector-agent/main/install.sh \
-#     | bash -s -- --enroll-token 'frc_...' --version v0.1.0-preview.7
+#     | bash -s -- --enroll-token 'frc_...' --version v0.1.0-preview.8
 #
 # After enrollment, Brocade switches are managed remotely from the FilterREX
 # dashboard. No reinstall is needed to add, update, or remove targets.
@@ -227,10 +227,10 @@ if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "000" ]; then
   fi
   [ -n "$HOST_LABEL" ] && echo "      -e HOST_LABEL='${HOST_LABEL}' \\"
   [ "$INSECURE_SKIP_VERIFY" = "true" ] && echo "      -e INSECURE_SKIP_VERIFY=true \\"
-  echo "      ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.7"
+  echo "      ghcr.io/filterrex-ai/connector-agent/connector-agent:0.1.0-preview.8"
   echo ""
   echo "  Note: Docker fallback uses the current pinned preview image. For a different"
-  echo "  image tag, replace ':0.1.0-preview.7' with the desired version."
+  echo "  image tag, replace ':0.1.0-preview.8' with the desired version."
   echo ""
   echo "  If you prefer a bind mount instead of a named volume:"
   echo "    sudo mkdir -p /etc/filterrex/secrets"

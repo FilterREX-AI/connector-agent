@@ -73,15 +73,18 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 			a.baseURL = httpURL
 			_, err2 := a.brocadeGet("/rest/running/brocade-chassis/chassis")
 			if err2 != nil {
+				brocadeRESTReadiness.RecordFailure(profile.TargetID, classifyBrocadeRESTError(err2), "rest verification failed on https and http")
 				return fmt.Errorf("Brocade FOS REST verification failed (tried HTTPS and HTTP): %w", err2)
 			}
 			log.Printf("[brocade:%s] Connected via HTTP (no TLS)", profile.Name)
+			brocadeRESTReadiness.RecordSuccess(profile.TargetID, brocadeRESTSecurityState(a.baseURL, profile.TLS.InsecureSkipVerify), NormalizeTLSPolicy(profile.TLS.Policy))
 			return nil
 		}
 		if strings.Contains(err.Error(), "tls: handshake failure") || strings.Contains(err.Error(), "tls: ") {
 			log.Printf("[brocade.rest_tls_failed] target_id=%s target_name=%s host=%s tls_policy=%s min_version=TLS1.2 max_version=%s configured_suites=%q unsupported_suites=%q certificate_verification=%t error=%q",
 				profile.TargetID, profile.Name, brocadeHostLabel(a.baseURL), policy, tlsMaxVersionLabel(policy), describeCipherSuites(policy), describeUnsupportedLegacyCipherSuites(policy), !profile.TLS.InsecureSkipVerify, err.Error())
 		}
+		brocadeRESTReadiness.RecordFailure(profile.TargetID, classifyBrocadeRESTError(err), "rest verification failed")
 		return fmt.Errorf("Brocade FOS REST verification failed: %w", err)
 	}
 	if a.lastTLSStateOK {
@@ -90,13 +93,19 @@ func (a *BrocadeAdapter) Init(profile *TargetProfile, creds map[string]string) e
 	} else {
 		log.Printf("[brocade:%s] Connected via HTTPS (tls_policy=%s)", profile.Name, policy)
 	}
+	brocadeRESTReadiness.RecordSuccess(profile.TargetID, brocadeRESTSecurityState(a.baseURL, profile.TLS.InsecureSkipVerify), policy)
 	return nil
 }
 
 func (a *BrocadeAdapter) Collect() (map[string]interface{}, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	chassis, _ := a.brocadeGet("/rest/running/brocade-chassis/chassis")
+	chassis, chassisErr := a.brocadeGet("/rest/running/brocade-chassis/chassis")
+	if chassisErr != nil {
+		brocadeRESTReadiness.RecordFailure(a.profile.TargetID, classifyBrocadeRESTError(chassisErr), "chassis fetch failed")
+	} else {
+		brocadeRESTReadiness.RecordSuccess(a.profile.TargetID, brocadeRESTSecurityState(a.baseURL, a.profile.TLS.InsecureSkipVerify), NormalizeTLSPolicy(a.profile.TLS.Policy))
+	}
 	switchInfo, _ := a.brocadeGet("/rest/running/brocade-fibrechannel-switch/fibrechannel-switch")
 	ports, _ := a.brocadeGet("/rest/running/brocade-interface/fibrechannel")
 	media, _ := a.brocadeGet("/rest/running/brocade-media/media-rdp")
@@ -897,6 +906,37 @@ func isConnRefused(err error) bool {
 		return opErr.Op == "dial" && strings.Contains(opErr.Err.Error(), "connection refused")
 	}
 	return strings.Contains(err.Error(), "connection refused")
+}
+
+// classifyBrocadeRESTError maps a raw error from a Brocade REST call into a
+// stable, sanitized machine code suitable for publication in the heartbeat
+// capability manifest. Never returns raw error text — callers pass a short
+// non-secret `reason` separately.
+func classifyBrocadeRESTError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "connection refused"):
+		return "rest_connection_failed"
+	case strings.Contains(msg, "no such host"), strings.Contains(msg, "dns"):
+		return "rest_connection_failed"
+	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline exceeded"):
+		return "rest_timeout"
+	case strings.Contains(msg, "x509"), strings.Contains(msg, "certificate"):
+		return "rest_certificate_untrusted"
+	case strings.Contains(msg, "tls: handshake failure"), strings.Contains(msg, "tls:"):
+		return "rest_tls_handshake_failed"
+	case strings.Contains(msg, "401"), strings.Contains(msg, "unauthorized"):
+		return "rest_auth_failed"
+	case strings.Contains(msg, "403"), strings.Contains(msg, "forbidden"):
+		return "rest_permission_denied"
+	case strings.Contains(msg, "400"), strings.Contains(msg, "invalid rest uri"):
+		return "rest_invalid_uri"
+	default:
+		return "rest_response_invalid"
+	}
 }
 
 func brocadeHostLabel(endpoint string) string {
