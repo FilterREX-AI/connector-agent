@@ -29,7 +29,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -52,6 +54,7 @@ import (
 
 	"github.com/filterrex-ai/connector-agent/brocaderest"
 )
+
 
 // ─── config-file layout ──────────────────────────────────────────────────────
 
@@ -90,6 +93,15 @@ type sshEntry struct {
 	KeyPath        string `json:"key_path"`
 	PublicKeyPath  string `json:"public_key_path,omitempty"`
 	KnownHostsPath string `json:"known_hosts_path"`
+
+	// Key metadata — DERIVED from the actual key material at configure time.
+	// Published verbatim on heartbeat as `ssh_key_algorithm` / `ssh_key_bits`
+	// / `ssh_key_origin` / `ssh_key_fingerprint_sha256`. Never asserted by
+	// the operator; imported keys always report what they actually are.
+	KeyAlgorithm         string `json:"key_algorithm,omitempty"` // "rsa" | "ed25519"
+	KeyBits              int    `json:"key_bits,omitempty"`      // e.g. 3072 for RSA
+	KeyOrigin            string `json:"key_origin,omitempty"`    // "generated" | "imported"
+	KeyFingerprintSHA256 string `json:"key_fingerprint_sha256,omitempty"`
 }
 
 type readiness struct {
@@ -98,7 +110,11 @@ type readiness struct {
 	RESTSecurityState string `json:"rest_security_state,omitempty"`
 	SSHReady          bool   `json:"ssh_ready"`
 	SSHReason         string `json:"ssh_reason,omitempty"`
+	// SSHProbeStage is the highest stage that has been proven for this target.
+	// After `target configure` completes without probing, this is "not_run".
+	SSHProbeStage string `json:"ssh_probe_stage,omitempty"`
 }
+
 
 // ─── entry point ─────────────────────────────────────────────────────────────
 
@@ -117,8 +133,16 @@ func Run(args []string) int {
 	stateDir := fs.String("state-dir", "/var/lib/filterrex", "Read-only mount of the connector state volume (identity).")
 	nonInteractive := fs.Bool("y", false, "Reserved: refuse to run unattended. Always false in preview.3.")
 
+	// Key-selection flags. These are MUTUALLY EXCLUSIVE:
+	//   --key-algo rsa-3072        generate a fresh RSA-3072 key   (default)
+	//   --key-algo ed25519         generate a fresh Ed25519 key
+	//   --import-existing <path>   import an existing private key; algorithm
+	//                              and size are DERIVED from the key itself
+	//                              and MUST NOT be asserted by the operator.
+	keyAlgo := fs.String("key-algo", "", "Generate key of this algorithm: rsa-3072 (default) or ed25519. Mutually exclusive with --import-existing.")
+	importExisting := fs.String("import-existing", "", "Import an existing SSH private key from this path (read-only). Mutually exclusive with --key-algo.")
+
 	if err := fs.Parse(args); err != nil {
-		// flag package already printed the usage/error to stderr
 		return 2
 	}
 
@@ -135,19 +159,86 @@ func Run(args []string) int {
 		return 2
 	}
 
-	if err := run(*configDir, *stateDir, *profile); err != nil {
+	// Validate profile is a UUID before any path is derived from it.
+	if !isProfileUUID(*profile) {
+		fmt.Fprintln(os.Stderr, "target configure: --profile must be a valid target-profile UUID (v4).")
+		return 2
+	}
+
+	// Mutual exclusion: never let an operator assert an algorithm for an
+	// imported key. Imported keys always self-describe.
+	if strings.TrimSpace(*keyAlgo) != "" && strings.TrimSpace(*importExisting) != "" {
+		fmt.Fprintln(os.Stderr, "target configure: --key-algo and --import-existing are mutually exclusive.")
+		return 2
+	}
+
+	kc, err := parseKeyChoice(*keyAlgo, *importExisting)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "target configure:", err.Error())
+		return 2
+	}
+
+	if err := run(*configDir, *stateDir, *profile, kc); err != nil {
 		fmt.Fprintln(os.Stderr, "target configure:", err.Error())
 		return 1
 	}
 	return 0
 }
 
+// keyChoice captures the resolved key-selection intent for the wizard.
+// Exactly one of GenerateAlgorithm / ImportPath is populated. Interactive
+// mode may still override it when the operator opts to reuse an existing
+// on-disk key.
+type keyChoice struct {
+	// GenerateAlgorithm is one of "rsa-3072" or "ed25519". Empty means
+	// the operator did not force generation via a flag.
+	GenerateAlgorithm string
+	// ImportPath is a non-empty read-only path when --import-existing was
+	// supplied on the command line.
+	ImportPath string
+	// FromFlag records whether the choice came from a CLI flag (vs the
+	// interactive default). Used to decide whether to reprompt.
+	FromFlag bool
+}
+
+func parseKeyChoice(keyAlgo, importPath string) (keyChoice, error) {
+	keyAlgo = strings.TrimSpace(strings.ToLower(keyAlgo))
+	importPath = strings.TrimSpace(importPath)
+	switch {
+	case importPath != "":
+		return keyChoice{ImportPath: importPath, FromFlag: true}, nil
+	case keyAlgo == "":
+		// Default: RSA-3072 (FOS 7.x/8.x compatibility default), only when
+		// interactive path runs generation without further prompting.
+		return keyChoice{GenerateAlgorithm: "rsa-3072", FromFlag: false}, nil
+	case keyAlgo == "rsa-3072", keyAlgo == "rsa":
+		return keyChoice{GenerateAlgorithm: "rsa-3072", FromFlag: true}, nil
+	case keyAlgo == "ed25519":
+		return keyChoice{GenerateAlgorithm: "ed25519", FromFlag: true}, nil
+	default:
+		return keyChoice{}, fmt.Errorf("--key-algo %q not supported (use rsa-3072 or ed25519)", keyAlgo)
+	}
+}
+
+// isProfileUUID accepts any RFC 4122 v1–v5 UUID in canonical hyphenated
+// form. It refuses enrollment tokens, arbitrary strings, or anything
+// containing path separators — the profile string is the filename stem for
+// per-target keys and secrets.
+var profileUUIDRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$`)
+
+func isProfileUUID(s string) bool {
+	return profileUUIDRe.MatchString(strings.TrimSpace(s))
+}
+
+
 // ─── main flow ───────────────────────────────────────────────────────────────
 
-func run(configDir, stateDir, profile string) error {
+func run(configDir, stateDir, profile string, kc keyChoice) error {
 	uid, gid := os.Geteuid(), os.Getegid()
 	fmt.Printf("target configure (preview.3)\n  config-dir: %s\n  state-dir:  %s\n  profile:    %s\n  euid/egid:  %d/%d\n\n",
 		configDir, stateDir, profile, uid, gid)
+
+
 
 	if err := ensureDirs(configDir); err != nil {
 		return err
@@ -196,10 +287,12 @@ func run(configDir, stateDir, profile string) error {
 	}
 
 	// 4) SSH key
-	sshKeyPath, sshPubPath, err := configureSSHKey(configDir, profile, rec)
+	keyMeta, err := configureSSHKey(configDir, profile, rec, kc)
 	if err != nil {
 		return err
 	}
+	sshKeyPath := keyMeta.KeyPath
+	sshPubPath := keyMeta.PublicKeyPath
 
 	// 5) host-key enrollment with out-of-band challenge
 	knownHostsPath, hkErr := enrollHostKey(configDir, addr, sshPort, rec)
@@ -217,10 +310,14 @@ func run(configDir, stateDir, profile string) error {
 		rec.REST.CAFile = existing.REST.CAFile
 	}
 	rec.SSH = &sshEntry{
-		Username:       sshUser,
-		KeyPath:        sshKeyPath,
-		PublicKeyPath:  sshPubPath,
-		KnownHostsPath: knownHostsPath,
+		Username:             sshUser,
+		KeyPath:              sshKeyPath,
+		PublicKeyPath:        sshPubPath,
+		KnownHostsPath:       knownHostsPath,
+		KeyAlgorithm:         keyMeta.Algorithm,
+		KeyBits:              keyMeta.Bits,
+		KeyOrigin:            keyMeta.Origin,
+		KeyFingerprintSHA256: keyMeta.FingerprintSHA256,
 	}
 
 	// 6) REST probe
@@ -229,15 +326,39 @@ func run(configDir, stateDir, profile string) error {
 	rec.Readiness.RESTReason = restReason
 	rec.Readiness.RESTSecurityState = restSecState
 
-	// 7) SSH probe (only if host-key enrollment succeeded)
-	sshReady, sshReason := false, "known_hosts_missing"
-	if hkErr == nil {
-		sshReady, sshReason = probeSSH(rec)
+	// 7) SSH readiness.
+	//
+	// `target configure` NEVER runs an SSH auth probe on first setup: the
+	// switch-side `sshutil importpubkey` step happens between configure and
+	// the first probe, so an inline probe would deterministically publish a
+	// misleading auth failure. Instead we publish `setup_pending` +
+	// `not_run` so the wire contract clearly says "operator has not yet run
+	// `target probe`".
+	//
+	// The repair path (existing known_hosts + operator refreshed keys) still
+	// benefits from an inline probe; when the host key was already trusted
+	// we treat that as a signal that setup is not a fresh install.
+	sshReady, sshReason, sshStage := false, "setup_pending", "not_run"
+	if hkErr == nil && existing != nil && existing.SSH != nil && existing.Readiness.SSHReady {
+		// Reconfiguring a previously-working target — probe to detect
+		// regressions immediately.
+		r, reason := probeSSH(rec)
+		sshReady = r
+		if r {
+			sshReason = ""
+			sshStage = "command_succeeded"
+		} else {
+			sshReason = reason
+			sshStage = "auth_succeeded" // best-effort: we know the earlier config had reached command_succeeded
+		}
 	}
 	rec.Readiness.SSHReady = sshReady
 	rec.Readiness.SSHReason = sshReason
+	rec.Readiness.SSHProbeStage = sshStage
 
 	rec.LastWizard = time.Now().UTC().Format(time.RFC3339)
+
+
 
 	// 8) atomic write, preserving other profiles' entries.
 	if doc.Targets == nil {
@@ -254,14 +375,28 @@ func run(configDir, stateDir, profile string) error {
 	fmt.Println("\nSaved.")
 	fmt.Printf("  Live Workbench queries        %s\n", stateLine(restReady, restReason))
 	fmt.Printf("  SSH evidence collection       %s\n", stateLine(sshReady, sshReason))
+	fmt.Printf("  Key                           %s · %s\n", describeKey(rec.SSH), rec.SSH.KeyOrigin)
+	fmt.Printf("  Key fingerprint               %s\n", rec.SSH.KeyFingerprintSHA256)
 	if !restReady || !sshReady {
-		fmt.Println("\nRe-run this wizard against the same --profile to repair the failed path.")
+		fmt.Println("\nNext step: after installing the public key on the switch (`sshutil importpubkey`),")
+		fmt.Println("run `connector-agent target probe --profile <uuid>` to prove end-to-end SSH readiness.")
 	}
 	if sshPubPath != "" {
 		fmt.Printf("\nSSH public key to install on the switch (read-only account):\n  %s\n", sshPubPath)
 	}
 	return nil
 }
+
+func describeKey(s *sshEntry) string {
+	if s == nil || s.KeyAlgorithm == "" {
+		return "unknown"
+	}
+	if s.KeyBits > 0 {
+		return fmt.Sprintf("%s %d", strings.ToUpper(s.KeyAlgorithm), s.KeyBits)
+	}
+	return strings.ToUpper(s.KeyAlgorithm)
+}
+
 
 func stateLine(ready bool, reason string) string {
 	if ready {
@@ -397,89 +532,248 @@ func configureRESTPassword(configDir, profile string, rec *targetRecord) (string
 	return path, "production_verified", nil
 }
 
-func configureSSHKey(configDir, profile string, rec *targetRecord) (string, string, error) {
+// keyMetadata carries the DERIVED description of an on-disk private key.
+// It is always populated from the actual key material, never asserted.
+type keyMetadata struct {
+	KeyPath           string
+	PublicKeyPath     string
+	Algorithm         string // "rsa" | "ed25519"
+	Bits              int    // e.g. 3072 for RSA; 0 for Ed25519
+	Origin            string // "generated" | "imported"
+	FingerprintSHA256 string // "SHA256:…"
+}
+
+func configureSSHKey(configDir, profile string, rec *targetRecord, kc keyChoice) (keyMetadata, error) {
 	slug := profileSlug(profile)
 	keyPath := filepath.Join(configDir, sshKeyDir, slug)
 	pubPath := keyPath + ".pub"
 
+	// If a key already exists on disk, offer to reuse it — but re-derive
+	// metadata from the key bytes so the heartbeat stays accurate even
+	// after operator-facing state (KeyAlgorithm etc.) has been cleared.
 	if existsRegularSecret(keyPath) {
 		switch confirmChoice("SSH key exists. Reuse / Regenerate / Import", "reuse") {
 		case "reuse":
-			return keyPath, pubPath, nil
+			meta, err := deriveKeyMetadata(keyPath, pubPath, "generated")
+			if err != nil {
+				return keyMetadata{}, err
+			}
+			// Preserve the previously-recorded origin when reusing.
+			if rec != nil && rec.SSH != nil && rec.SSH.KeyOrigin != "" {
+				meta.Origin = rec.SSH.KeyOrigin
+			}
+			return meta, nil
 		case "import":
 			return importSSHKey(keyPath, pubPath)
 		case "regenerate":
 			// fall through to generation
 		}
-	} else {
-		if confirmChoice("Generate a new ed25519 SSH key or import an existing one?", "generate") == "import" {
+	}
+
+	// Choose the generator: flag first, then interactive default.
+	algo := kc.GenerateAlgorithm
+	if kc.ImportPath != "" {
+		return importSSHKeyFrom(kc.ImportPath, keyPath, pubPath)
+	}
+	if !kc.FromFlag {
+		// Interactive default: RSA-3072 for FOS 7.x/8.x compatibility.
+		// Operators who need Ed25519 can rerun with --key-algo ed25519.
+		choice := confirmChoice(
+			"Generate RSA-3072 (recommended for FOS 7.x/8.x), Ed25519, or Import an existing key",
+			"rsa-3072",
+		)
+		switch choice {
+		case "import":
 			return importSSHKey(keyPath, pubPath)
+		case "ed25519":
+			algo = "ed25519"
+		default:
+			algo = "rsa-3072"
 		}
 	}
-	return generateEd25519(keyPath, pubPath)
+
+	switch algo {
+	case "ed25519":
+		return generateEd25519(keyPath, pubPath)
+	case "rsa-3072", "rsa":
+		return generateRSA3072(keyPath, pubPath)
+	default:
+		return keyMetadata{}, fmt.Errorf("unsupported generator algorithm %q", algo)
+	}
 }
 
-func generateEd25519(keyPath, pubPath string) (string, string, error) {
+func generateEd25519(keyPath, pubPath string) (keyMetadata, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return "", "", fmt.Errorf("ed25519 generate: %w", err)
+		return keyMetadata{}, fmt.Errorf("ed25519 generate: %w", err)
 	}
 	pemBlock, err := ssh.MarshalPrivateKey(priv, "filterrex-ro")
 	if err != nil {
-		return "", "", fmt.Errorf("marshal private key: %w", err)
+		return keyMetadata{}, fmt.Errorf("marshal private key: %w", err)
 	}
 	privPEM := pem.EncodeToMemory(pemBlock)
 	if err := atomicWriteFile(keyPath, privPEM, 0o600); err != nil {
-		return "", "", err
+		return keyMetadata{}, err
 	}
 	sshPub, err := ssh.NewPublicKey(pub)
 	if err != nil {
-		return "", "", err
+		return keyMetadata{}, err
 	}
 	if err := atomicWriteFile(pubPath, ssh.MarshalAuthorizedKey(sshPub), 0o644); err != nil {
-		return "", "", err
+		return keyMetadata{}, err
 	}
-	return keyPath, pubPath, nil
+	return keyMetadata{
+		KeyPath:           keyPath,
+		PublicKeyPath:     pubPath,
+		Algorithm:         "ed25519",
+		Bits:              0,
+		Origin:            "generated",
+		FingerprintSHA256: sshFingerprintSHA256(sshPub),
+	}, nil
 }
 
-func importSSHKey(keyPath, pubPath string) (string, string, error) {
+func generateRSA3072(keyPath, pubPath string) (keyMetadata, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 3072)
+	if err != nil {
+		return keyMetadata{}, fmt.Errorf("rsa generate: %w", err)
+	}
+	// PKCS#8 PEM so ssh.ParsePrivateKey (and OpenSSH) accept it uniformly.
+	pkcs8, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return keyMetadata{}, fmt.Errorf("marshal rsa private key: %w", err)
+	}
+	privPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8})
+	if err := atomicWriteFile(keyPath, privPEM, 0o600); err != nil {
+		return keyMetadata{}, err
+	}
+	sshPub, err := ssh.NewPublicKey(&priv.PublicKey)
+	if err != nil {
+		return keyMetadata{}, err
+	}
+	if err := atomicWriteFile(pubPath, ssh.MarshalAuthorizedKey(sshPub), 0o644); err != nil {
+		return keyMetadata{}, err
+	}
+	return keyMetadata{
+		KeyPath:           keyPath,
+		PublicKeyPath:     pubPath,
+		Algorithm:         "rsa",
+		Bits:              3072,
+		Origin:            "generated",
+		FingerprintSHA256: sshFingerprintSHA256(sshPub),
+	}, nil
+}
+
+// importSSHKey is the interactive entry point (prompts for the source path).
+func importSSHKey(keyPath, pubPath string) (keyMetadata, error) {
 	src := prompt("Path to existing private key on the setup host", "")
 	if src == "" {
-		return "", "", errors.New("import path is required")
+		return keyMetadata{}, errors.New("import path is required")
 	}
+	return importSSHKeyFrom(src, keyPath, pubPath)
+}
+
+// importSSHKeyFrom copies an existing private key into managed storage,
+// DERIVES its algorithm and size from the key itself (never trusting an
+// external assertion), and always rewrites the .pub file from the private
+// key so an adjacent stale .pub can never mislead heartbeat metadata.
+func importSSHKeyFrom(src, keyPath, pubPath string) (keyMetadata, error) {
 	fi, err := os.Lstat(src)
 	if err != nil {
-		return "", "", fmt.Errorf("import source unreadable")
+		return keyMetadata{}, fmt.Errorf("import source unreadable")
 	}
 	if fi.Mode()&fs.ModeSymlink != 0 {
-		return "", "", errors.New("import source is a symlink; refusing")
+		return keyMetadata{}, errors.New("import source is a symlink; refusing")
 	}
 	if !fi.Mode().IsRegular() {
-		return "", "", errors.New("import source is not a regular file")
+		return keyMetadata{}, errors.New("import source is not a regular file")
 	}
 	if fi.Mode().Perm()&0o077 != 0 {
-		return "", "", fmt.Errorf("import source permissions %#o are too permissive; use 0600 or 0400", fi.Mode().Perm())
+		return keyMetadata{}, fmt.Errorf("import source permissions %#o are too permissive; use 0600 or 0400", fi.Mode().Perm())
 	}
 	b, err := os.ReadFile(src)
 	if err != nil {
-		return "", "", errors.New("import source read failed")
+		return keyMetadata{}, errors.New("import source read failed")
 	}
 	signer, err := ssh.ParsePrivateKey(b)
 	if err != nil {
 		zeroBytes(b)
-		return "", "", errors.New("import source is not a valid SSH private key")
+		// Distinguish encrypted keys — this release does not persist a
+		// passphrase, so we reject them with a stable reason code that
+		// the wire contract already understands.
+		if strings.Contains(strings.ToLower(err.Error()), "passphrase") {
+			return keyMetadata{}, errors.New("encrypted_private_key_unsupported")
+		}
+		return keyMetadata{}, errors.New("import source is not a valid SSH private key")
 	}
 	if err := atomicWriteFile(keyPath, b, 0o600); err != nil {
 		zeroBytes(b)
-		return "", "", err
+		return keyMetadata{}, err
 	}
 	zeroBytes(b)
 	pub := signer.PublicKey()
 	if err := atomicWriteFile(pubPath, ssh.MarshalAuthorizedKey(pub), 0o644); err != nil {
-		return "", "", err
+		return keyMetadata{}, err
 	}
-	return keyPath, pubPath, nil
+	algo, bits := deriveAlgoBits(pub)
+	return keyMetadata{
+		KeyPath:           keyPath,
+		PublicKeyPath:     pubPath,
+		Algorithm:         algo,
+		Bits:              bits,
+		Origin:            "imported",
+		FingerprintSHA256: sshFingerprintSHA256(pub),
+	}, nil
 }
+
+// deriveKeyMetadata reads an already-stored private key and re-derives its
+// algorithm, size, and fingerprint. Used by the "reuse" branch so heartbeat
+// metadata stays accurate across wizard runs.
+func deriveKeyMetadata(keyPath, pubPath, defaultOrigin string) (keyMetadata, error) {
+	b, err := os.ReadFile(keyPath)
+	if err != nil {
+		return keyMetadata{}, fmt.Errorf("read stored key: %w", err)
+	}
+	signer, err := ssh.ParsePrivateKey(b)
+	zeroBytes(b)
+	if err != nil {
+		return keyMetadata{}, errors.New("stored key is not a valid SSH private key")
+	}
+	pub := signer.PublicKey()
+	algo, bits := deriveAlgoBits(pub)
+	return keyMetadata{
+		KeyPath:           keyPath,
+		PublicKeyPath:     pubPath,
+		Algorithm:         algo,
+		Bits:              bits,
+		Origin:            defaultOrigin,
+		FingerprintSHA256: sshFingerprintSHA256(pub),
+	}, nil
+}
+
+// deriveAlgoBits maps a parsed ssh.PublicKey to the wire vocabulary.
+func deriveAlgoBits(pub ssh.PublicKey) (string, int) {
+	switch pub.Type() {
+	case ssh.KeyAlgoED25519:
+		return "ed25519", 0
+	case ssh.KeyAlgoRSA, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512:
+		if ck, ok := pub.(ssh.CryptoPublicKey); ok {
+			if rp, ok := ck.CryptoPublicKey().(*rsa.PublicKey); ok {
+				return "rsa", rp.N.BitLen()
+			}
+		}
+		return "rsa", 0
+	default:
+		return "unknown", 0
+	}
+}
+
+// sshFingerprintSHA256 returns "SHA256:<base64-nopad>" matching OpenSSH's
+// `ssh-keygen -lf` output.
+func sshFingerprintSHA256(pub ssh.PublicKey) string {
+	sum := sha256.Sum256(pub.Marshal())
+	return "SHA256:" + strings.TrimRight(base64.StdEncoding.EncodeToString(sum[:]), "=")
+}
+
 
 func enrollHostKey(configDir, host string, sshPort int, existing *targetRecord) (string, error) {
 	khPath := filepath.Join(configDir, knownHostsFn)

@@ -369,26 +369,55 @@ type CapabilityStatusInfo struct {
 	Reason                string                        `json:"reason,omitempty"`
 }
 
-// PerTargetReadiness is the per-target REST readiness snapshot the agent
-// publishes with each heartbeat.
+// PerTargetReadiness is the per-target readiness snapshot the agent publishes
+// with each heartbeat, keyed by target_profile_id (exact application UUID).
+//
+// Two protocol paths share this record:
+//
+//   - REST readiness (`rest_*`) — gates the Workbench live-query RPC
+//     (`authorize_brocade_live_query`).
+//   - SSH readiness (`ssh_*`) — gates the Evidence Bundle dispatch RPC
+//     (`agent-evidence-dispatch`), consumed by the app-side classifier in
+//     `src/lib/brocadeReadiness.ts`.
 //
 // IMPORTANT invariants:
 //   - Never populate `reported_at` here. The control plane overwrites it via
 //     `stamp_capability_status_reported_at`; that server timestamp is the
 //     only clock authorization trusts.
-//   - `RESTReady=true` is emitted only after a successful authenticated FOS
-//     REST call. Locally-stale successes (no probe within the registry TTL)
-//     must flip to false before publication.
-//   - `RESTReason`, `LastRESTErrorCode` are stable, sanitized identifiers —
-//     never raw response bodies, credentials, or certificate contents.
+//   - `RESTReady=true` / `SSHReady=true` are emitted ONLY after a real
+//     successful probe. Locally-stale successes must flip to false before
+//     publication.
+//   - `RESTReason`, `SSHReason`, `LastRESTErrorCode` are stable, sanitized
+//     identifiers from the fixed vocabulary — never raw response bodies,
+//     credentials, key material, or certificate contents.
+//   - `SSHProbeStage` records the MOST ADVANCED stage that has been proven;
+//     it does not regress on transient failures. See the app classifier for
+//     the four-stage model (`identity_loaded` → `command_succeeded`).
+//   - `SSHKeyFingerprintSHA256` and `SwitchHostKeyFingerprintSHA256` are
+//     public fingerprints only — never emit the raw key or path.
 type PerTargetReadiness struct {
+	// REST path
 	RESTReady         bool   `json:"rest_ready"`
 	RESTReason        string `json:"rest_reason,omitempty"`
 	RESTSecurityState string `json:"rest_security_state,omitempty"` // production_verified | lab_tls_unverified | lab_http_cleartext | certificate_pinned
 	TLSPolicy         string `json:"tls_policy,omitempty"`
 	LastRESTErrorCode string `json:"last_rest_error_code,omitempty"`
 	LastRESTErrorAt   string `json:"last_rest_error_at,omitempty"`
+
+	// SSH path (Evidence Bundle collection)
+	SSHReady                       bool   `json:"ssh_ready"`
+	SSHReason                      string `json:"ssh_reason,omitempty"`         // setup_pending | ssh_key_not_found | host_key_mismatch | ssh_auth_failed | readonly_command_denied | ssh_timeout | probe_stale
+	SSHProbeStage                  string `json:"ssh_probe_stage,omitempty"`    // not_run | identity_loaded | host_key_verified | auth_succeeded | command_succeeded
+	SSHKeyAlgorithm                string `json:"ssh_key_algorithm,omitempty"`  // rsa | ed25519  (DERIVED from the actual key; never asserted)
+	SSHKeyBits                     int    `json:"ssh_key_bits,omitempty"`       // e.g. 3072 for RSA; omitted for ed25519
+	SSHKeyOrigin                   string `json:"ssh_key_origin,omitempty"`     // generated | imported
+	SSHKeyFingerprintSHA256        string `json:"ssh_key_fingerprint_sha256,omitempty"`        // "SHA256:…"
+	SSHUsername                    string `json:"ssh_username,omitempty"`
+	SwitchHostKeyFingerprintSHA256 string `json:"switch_host_key_fingerprint_sha256,omitempty"` // "SHA256:…"
+	LastProbeAt                    string `json:"last_probe_at,omitempty"`            // RFC3339
+	LastSuccessfulProbeAt          string `json:"last_successful_probe_at,omitempty"` // RFC3339 — never cleared on later failure
 }
+
 
 
 // ── Host State (persisted) ──
