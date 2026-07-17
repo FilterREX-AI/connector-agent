@@ -262,6 +262,31 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 		fmt.Println("Existing configuration detected for this profile — you will be prompted to reuse or replace each artifact.")
 	}
 
+	// Snapshot the pre-mutation state so the regression-probe guard can
+	// compare the new record against what was previously verified. `rec`
+	// is aliased to `existing` below so we cannot read prior values off it
+	// after prompts overwrite them.
+	var prev struct {
+		hasSSH             bool
+		wasSSHReady        bool
+		address            string
+		sshPort            int
+		sshUsername        string
+		sshKeyPath         string
+		sshFingerprint     string
+	}
+	if existing != nil {
+		prev.address = existing.Address
+		prev.sshPort = existing.SSHPort
+		prev.wasSSHReady = existing.Readiness.SSHReady
+		if existing.SSH != nil {
+			prev.hasSSH = true
+			prev.sshUsername = existing.SSH.Username
+			prev.sshKeyPath = existing.SSH.KeyPath
+			prev.sshFingerprint = existing.SSH.KeyFingerprintSHA256
+		}
+	}
+
 	rec := &targetRecord{Address: "", Readiness: readiness{}}
 	if existing != nil {
 		rec = existing
@@ -294,8 +319,11 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 	sshKeyPath := keyMeta.KeyPath
 	sshPubPath := keyMeta.PublicKeyPath
 
-	// 5) host-key enrollment with out-of-band challenge
-	knownHostsPath, hkErr := enrollHostKey(configDir, addr, sshPort, rec)
+	// 5) host-key enrollment with out-of-band challenge. `hostKeyRefreshed`
+	// is true whenever the operator accepted a new host key this run — in
+	// that case the regression-probe guard MUST NOT auto-probe, because the
+	// switch-side trust anchor just changed.
+	knownHostsPath, hostKeyRefreshed, hkErr := enrollHostKey(configDir, addr, sshPort, rec)
 	if hkErr != nil {
 		fmt.Fprintf(os.Stderr, "\nhost-key enrollment failed: %v\n", hkErr)
 	}
@@ -328,20 +356,41 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 
 	// 7) SSH readiness.
 	//
-	// `target configure` NEVER runs an SSH auth probe on first setup: the
+	// `target configure` NEVER runs an SSH auth probe on first setup — the
 	// switch-side `sshutil importpubkey` step happens between configure and
 	// the first probe, so an inline probe would deterministically publish a
 	// misleading auth failure. Instead we publish `setup_pending` +
 	// `not_run` so the wire contract clearly says "operator has not yet run
 	// `target probe`".
 	//
-	// The repair path (existing known_hosts + operator refreshed keys) still
-	// benefits from an inline probe; when the host key was already trusted
-	// we treat that as a signal that setup is not a fresh install.
+	// Automatic regression probing on the reconfigure/repair path is tightly
+	// constrained: it runs only when EVERY dimension that could have caused
+	// a legitimate first-run failure is unchanged. If any of the following
+	// were altered this run, we return to setup_pending / not_run and let
+	// `target probe` prove the new configuration explicitly:
+	//   - previous SSH state was not verified
+	//   - a new key was generated or imported (fingerprint drift)
+	//   - the managed key path changed
+	//   - the SSH username changed
+	//   - the management address or SSH port changed
+	//   - the host key was refreshed this run
+	//   - a missing identity was repaired (no prior SSH entry)
 	sshReady, sshReason, sshStage := false, "setup_pending", "not_run"
-	if hkErr == nil && existing != nil && existing.SSH != nil && existing.Readiness.SSHReady {
-		// Reconfiguring a previously-working target — probe to detect
-		// regressions immediately.
+	keyReused := prev.hasSSH &&
+		rec.SSH.KeyFingerprintSHA256 != "" &&
+		rec.SSH.KeyFingerprintSHA256 == prev.sshFingerprint &&
+		rec.SSH.KeyPath == prev.sshKeyPath
+	identityUnchanged := prev.hasSSH &&
+		rec.SSH.Username == prev.sshUsername &&
+		rec.Address == prev.address &&
+		rec.SSHPort == prev.sshPort
+	canRegressionProbe := hkErr == nil &&
+		!hostKeyRefreshed &&
+		prev.hasSSH &&
+		prev.wasSSHReady &&
+		keyReused &&
+		identityUnchanged
+	if canRegressionProbe {
 		r, reason := probeSSH(rec)
 		sshReady = r
 		if r {
@@ -775,18 +824,18 @@ func sshFingerprintSHA256(pub ssh.PublicKey) string {
 }
 
 
-func enrollHostKey(configDir, host string, sshPort int, existing *targetRecord) (string, error) {
+func enrollHostKey(configDir, host string, sshPort int, existing *targetRecord) (string, bool, error) {
 	khPath := filepath.Join(configDir, knownHostsFn)
 
 	if hasKnownHostEntry(khPath, host) {
 		if confirmChoice("known_hosts already has an entry for "+host+". Reuse or Refresh", "reuse") == "reuse" {
-			return khPath, nil
+			return khPath, false, nil
 		}
 	}
 
 	pub, hostKey, err := fetchHostKey(host, sshPort)
 	if err != nil {
-		return khPath, err
+		return khPath, false, err
 	}
 	sum := sha256.Sum256(pub.Marshal())
 	fpRaw := base64.StdEncoding.EncodeToString(sum[:])
@@ -797,7 +846,7 @@ func enrollHostKey(configDir, host string, sshPort int, existing *targetRecord) 
 	fmt.Println("trusted SSH session, or an approved inventory record.")
 
 	if !confirmYesNo("I have compared the fingerprint against a trusted source", false) {
-		return khPath, errors.New("host key not confirmed out-of-band")
+		return khPath, false, errors.New("host key not confirmed out-of-band")
 	}
 	want := ""
 	if len(fpNoPad) >= 12 {
@@ -807,14 +856,14 @@ func enrollHostKey(configDir, host string, sshPort int, existing *targetRecord) 
 	}
 	got := strings.TrimSpace(prompt("Type the final 12 characters of the fingerprint (excluding trailing '=')", ""))
 	if got != want {
-		return khPath, errors.New("fingerprint challenge failed")
+		return khPath, false, errors.New("fingerprint challenge failed")
 	}
 
 	line := knownHostsLine(host, sshPort, hostKey)
 	if err := appendLineAtomic(khPath, line, 0o640); err != nil {
-		return khPath, err
+		return khPath, false, err
 	}
-	return khPath, nil
+	return khPath, true, nil
 }
 
 func fetchHostKey(host string, port int) (ssh.PublicKey, []byte, error) {
