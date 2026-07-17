@@ -91,6 +91,11 @@ func dispatch(
 }
 
 func main() {
+	// Propagate the ldflag-injected host version into the target-configure
+	// wizard so its startup banner reflects the actual image tag instead of
+	// a stale hardcoded string.
+	targetconfigure.WizardVersion = displayVersion()
+
 	if handled, code := dispatch(os.Args[1:], os.Stdout, os.Stderr, targetconfigure.Run); handled {
 		os.Exit(code)
 	}

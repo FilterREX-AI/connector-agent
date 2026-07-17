@@ -131,7 +131,7 @@ func Run(args []string) int {
 	configDir := fs.String("config-dir", "/config", "Writable target-config directory.")
 	profile := fs.String("profile", "", "target_profile_id being configured.")
 	stateDir := fs.String("state-dir", "/var/lib/filterrex", "Read-only mount of the connector state volume (identity).")
-	nonInteractive := fs.Bool("y", false, "Reserved: refuse to run unattended. Always false in preview.3.")
+	nonInteractive := fs.Bool("y", false, "Reserved: refuse to run unattended. Always false in this preview.")
 
 	// Key-selection flags. These are MUTUALLY EXCLUSIVE:
 	//   --key-algo rsa-3072        generate a fresh RSA-3072 key   (default)
@@ -231,12 +231,22 @@ func isProfileUUID(s string) bool {
 }
 
 
+// WizardVersion is the human-facing version string printed in the wizard
+// banner. It is intentionally a package-level var so `main` can propagate
+// the ldflag-injected host version (`main.HostVersion`) without creating
+// an import cycle. Defaults to "dev" for local `go run` builds.
+var WizardVersion = "dev"
+
 // ─── main flow ───────────────────────────────────────────────────────────────
 
 func run(configDir, stateDir, profile string, kc keyChoice) error {
 	uid, gid := os.Geteuid(), os.Getegid()
-	fmt.Printf("target configure (preview.3)\n  config-dir: %s\n  state-dir:  %s\n  profile:    %s\n  euid/egid:  %d/%d\n\n",
-		configDir, stateDir, profile, uid, gid)
+	version := strings.TrimSpace(WizardVersion)
+	if version == "" {
+		version = "dev"
+	}
+	fmt.Printf("target configure (%s)\n  config-dir: %s\n  state-dir:  %s\n  profile:    %s\n  euid/egid:  %d/%d\n\n",
+		version, configDir, stateDir, profile, uid, gid)
 
 
 
