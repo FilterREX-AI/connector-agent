@@ -158,6 +158,9 @@ build_rpm() {
   cp "${SCRIPT_DIR}/rpm/filterrex-connector.spec" "${RPM_TOPDIR}/SPECS/filterrex-connector.spec"
 
   # Build RPM
+  # --target lets us build aarch64 RPMs on an x86_64 host runner. Without it
+  # rpmbuild treats BuildArch it doesn't natively support as "No compatible
+  # architectures found for build".
   rpmbuild \
     --define "_topdir ${RPM_TOPDIR}" \
     --define "_version ${RPM_VERSION}" \
@@ -165,6 +168,7 @@ build_rpm() {
     --define "_stagedir ${STAGE_DIR}" \
     --define "_unitdir ${UNITDIR}" \
     --buildroot "${RPM_TOPDIR}/BUILDROOT" \
+    --target "${RPM_ARCH}" \
     -bb "${RPM_TOPDIR}/SPECS/filterrex-connector.spec"
 
   # Move RPM to output directory
@@ -193,7 +197,7 @@ CHECKSUM_FILE="${OUT_DIR}/filterrex-connector-${PKG_VERSION}-packages.sha256"
 cd "${OUT_DIR}"
 sha256sum \
   "filterrex-connector_${PKG_VERSION}_${DEB_ARCH}.deb" \
-  filterrex-connector-${PKG_VERSION}-1.${RPM_ARCH}.rpm \
+  "filterrex-connector-${RPM_VERSION}-1.${RPM_ARCH}.rpm" \
   > "${CHECKSUM_FILE}"
 
 echo "✓ ${CHECKSUM_FILE}"
@@ -202,5 +206,5 @@ echo "=== Package build complete ==="
 echo ""
 echo "Artifacts:"
 echo "  ${OUT_DIR}/filterrex-connector_${PKG_VERSION}_${DEB_ARCH}.deb"
-echo "  ${OUT_DIR}/filterrex-connector-${PKG_VERSION}-1.${RPM_ARCH}.rpm"
+echo "  ${OUT_DIR}/filterrex-connector-${RPM_VERSION}-1.${RPM_ARCH}.rpm"
 echo "  ${CHECKSUM_FILE}"
