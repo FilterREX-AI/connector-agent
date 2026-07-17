@@ -967,7 +967,10 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 	// Binary capabilities compiled into this build. Add new entries here
 	// once their agent-side implementation ships; DO NOT gate this list on
 	// local readiness — that's what CapabilityStatus reports.
-	binaryCaps := []string{CapabilityCollectBrocadeEvidenceBundleV1}
+	binaryCaps := []string{
+		CapabilityCollectBrocadeEvidenceBundleV1,
+		CapabilityProbeBrocadeSshReadinessV1,
+	}
 
 	brocade := evaluateBrocadeCapabilityStatus(lanOnly)
 	if lanOnly {
@@ -1006,6 +1009,13 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 			for _, w := range warns {
 				fmt.Printf("[supervisor] warn: %s\n", w.String())
 			}
+			// Per-heartbeat one-liner so operators can grep the host log to
+			// confirm targets.json was read and how many SSH entries the
+			// merge will publish. Never logs secrets or key material.
+			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=%s published=%d warnings=%d\n",
+				s.targetConfigDir, len(sshSnap), len(warns))
+		} else {
+			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=<unset> published=0 warnings=0\n")
 		}
 		brocade.PerTarget = mergeBrocadePerTargetReadiness(restSnap, sshSnap, time.Now().UTC())
 	}

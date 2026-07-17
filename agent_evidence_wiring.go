@@ -38,6 +38,14 @@ import (
 // the server-side dispatch guard.
 const CapabilityCollectBrocadeEvidenceBundleV1 = "collect_brocade_evidence_bundle_v1"
 
+// CapabilityProbeBrocadeSshReadinessV1 advertises that this build participates
+// in remote-triggered SSH readiness probes for Brocade targets. The app gates
+// the "Test from agent now" affordance on this capability appearing in the
+// heartbeat manifest; advertising it here does not by itself execute a probe
+// (that wiring lands in a later release). Must match the string checked in
+// src/config/connectorCapabilities.ts.
+const CapabilityProbeBrocadeSshReadinessV1 = "probe_brocade_ssh_readiness_v1"
+
 // defaultBrocadeExportConfigPath is the operator-facing convention. It can be
 // overridden via FILTERREX_BROCADE_EXPORT_CONFIG for advanced installs.
 const defaultBrocadeExportConfigPath = "/etc/filterrex/brocade-export.json"
