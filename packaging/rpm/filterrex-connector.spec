@@ -5,7 +5,10 @@ Summary:        FilterREX Connector Host — Enterprise Infrastructure Agent
 License:        Apache-2.0
 URL:            https://san.filterrex.com
 
-BuildArch:      %{_build_arch}
+# BuildArch is set via `rpmbuild --target <arch>` in build-packages.sh so we can
+# cross-build aarch64 RPMs on an x86_64 GitHub runner. Setting it here would be
+# evaluated against the host's compatible-arch list and fail with
+# "No compatible architectures found for build".
 Requires:       systemd
 
 %{?systemd_requires}
