@@ -72,6 +72,12 @@ type targetsDoc struct {
 }
 
 type targetRecord struct {
+	// TargetID is the authoritative application target-profile UUID this
+	// record maps to. The outer targets.json map key is a LOCAL profile
+	// label (operator's choice); TargetID is the cloud/app identity. When
+	// unset, EffectiveTargetID falls back to the map key only if that key
+	// is itself a valid UUID (backward-compat for existing configs).
+	TargetID   string     `json:"target_id,omitempty"`
 	Address    string     `json:"address"`
 	RESTPort   int        `json:"rest_port,omitempty"`
 	SSHPort    int        `json:"ssh_port,omitempty"`
@@ -113,6 +119,15 @@ type readiness struct {
 	// SSHProbeStage is the highest stage that has been proven for this target.
 	// After `target configure` completes without probing, this is "not_run".
 	SSHProbeStage string `json:"ssh_probe_stage,omitempty"`
+
+	// LastSSHProbeAt is set every time an SSH probe RAN, regardless of
+	// outcome. It is NEVER set from wizard save time — that lives in
+	// `LastWizard`. The heartbeat consumes this to compute freshness.
+	LastSSHProbeAt string `json:"last_ssh_probe_at,omitempty"` // RFC3339
+	// LastSuccessfulSSHProbeAt is the most recent `command_succeeded`
+	// probe. It is preserved across later failures so the app can show
+	// "last verified" independently of the current state.
+	LastSuccessfulSSHProbeAt string `json:"last_successful_ssh_probe_at,omitempty"` // RFC3339
 }
 
 
@@ -129,7 +144,8 @@ func Run(args []string) int {
 	fs.SetOutput(os.Stderr)
 
 	configDir := fs.String("config-dir", "/config", "Writable target-config directory.")
-	profile := fs.String("profile", "", "target_profile_id being configured.")
+	profile := fs.String("profile", "", "Local profile identifier (targets.json map key). May be a target UUID or a safe label; must be paired with --target-id when not a UUID.")
+	targetID := fs.String("target-id", "", "Authoritative application target-profile UUID. When --profile is a UUID and this is omitted, the profile is used.")
 	stateDir := fs.String("state-dir", "/var/lib/filterrex", "Read-only mount of the connector state volume (identity).")
 	nonInteractive := fs.Bool("y", false, "Reserved: refuse to run unattended. Always false in this preview.")
 
@@ -159,9 +175,22 @@ func Run(args []string) int {
 		return 2
 	}
 
-	// Validate profile is a UUID before any path is derived from it.
-	if !isProfileUUID(*profile) {
-		fmt.Fprintln(os.Stderr, "target configure: --profile must be a valid target-profile UUID (v4).")
+	// Validate the profile is a safe identifier before any path is derived
+	// from it. Profile labels flow into per-target filenames via
+	// profileSlug, so anything containing path separators or control
+	// characters is rejected outright.
+	if !isSafeProfileName(*profile) {
+		fmt.Fprintln(os.Stderr, "target configure: --profile must be a safe identifier (letters, digits, dot, dash, underscore).")
+		return 2
+	}
+
+	// Resolve the effective target UUID up front. --target-id wins when set;
+	// otherwise a UUID-shaped --profile is accepted as its own target ID
+	// (backward compat). A non-UUID profile without --target-id is rejected:
+	// we will NEVER publish per_target["faba"] on the wire.
+	resolvedTargetID, terr := resolveTargetIDArgs(*profile, *targetID)
+	if terr != nil {
+		fmt.Fprintln(os.Stderr, "target configure:", terr.Error())
 		return 2
 	}
 
@@ -178,11 +207,40 @@ func Run(args []string) int {
 		return 2
 	}
 
-	if err := run(*configDir, *stateDir, *profile, kc); err != nil {
+	if err := run(*configDir, *stateDir, *profile, resolvedTargetID, kc); err != nil {
 		fmt.Fprintln(os.Stderr, "target configure:", err.Error())
 		return 1
 	}
 	return 0
+}
+
+// resolveTargetIDArgs mirrors EffectiveTargetID but for raw CLI inputs (no
+// record yet on disk). It returns the canonical lowercase target UUID or a
+// diagnostic error string for stderr. Non-interactive `target configure` MUST
+// reject a non-UUID profile without --target-id so a typo never silently
+// publishes readiness under a stray label.
+func resolveTargetIDArgs(profile, targetIDFlag string) (string, error) {
+	tid := strings.TrimSpace(targetIDFlag)
+	if tid != "" {
+		id := canonicalUUID(tid)
+		if id == "" {
+			return "", errors.New("--target-id must be a valid target-profile UUID (v4)")
+		}
+		return id, nil
+	}
+	if id := canonicalUUID(profile); id != "" {
+		return id, nil
+	}
+	return "", errors.New("--target-id is required when --profile is not a UUID (target_id_required)")
+}
+
+// isSafeProfileName restricts profile labels to characters that are safe as
+// filename stems (profileSlug already re-sanitizes, but we reject at the
+// boundary rather than silently rewriting the operator's identifier).
+var safeProfileRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+
+func isSafeProfileName(s string) bool {
+	return safeProfileRe.MatchString(strings.TrimSpace(s))
 }
 
 // keyChoice captures the resolved key-selection intent for the wizard.
@@ -239,14 +297,14 @@ var WizardVersion = "dev"
 
 // ─── main flow ───────────────────────────────────────────────────────────────
 
-func run(configDir, stateDir, profile string, kc keyChoice) error {
+func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) error {
 	uid, gid := os.Geteuid(), os.Getegid()
 	version := strings.TrimSpace(WizardVersion)
 	if version == "" {
 		version = "dev"
 	}
-	fmt.Printf("target configure (%s)\n  config-dir: %s\n  state-dir:  %s\n  profile:    %s\n  euid/egid:  %d/%d\n\n",
-		version, configDir, stateDir, profile, uid, gid)
+	fmt.Printf("target configure (%s)\n  config-dir: %s\n  state-dir:  %s\n  profile:    %s\n  target-id:  %s\n  euid/egid:  %d/%d\n\n",
+		version, configDir, stateDir, profile, resolvedTargetID, uid, gid)
 
 
 
@@ -270,6 +328,31 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 	existing := doc.Targets[profile]
 	if existing != nil {
 		fmt.Println("Existing configuration detected for this profile — you will be prompted to reuse or replace each artifact.")
+	}
+
+	// Detect an application-target remap: the operator supplied a
+	// --target-id (or a UUID-shaped --profile) that resolves to a DIFFERENT
+	// canonical UUID than the record previously mapped to. When that
+	// happens we require explicit confirmation and reset SSH readiness so
+	// a previously-verified switch profile cannot silently authorize a new
+	// application target.
+	mappingChanged := false
+	if existing != nil {
+		prevResolved, perr := EffectiveTargetID(profile, existing)
+		if perr == nil && prevResolved != "" && prevResolved != resolvedTargetID {
+			mappingChanged = true
+			fmt.Println("")
+			fmt.Println("Local profile:         " + profile)
+			fmt.Println("Previous target ID:    " + prevResolved)
+			fmt.Println("Requested target ID:   " + resolvedTargetID)
+			fmt.Println("")
+			fmt.Println("This changes the application target associated with this local profile")
+			fmt.Println("and will reset SSH readiness. An explicit `target probe` will be required")
+			fmt.Println("before the connector can publish ssh_ready=true under the new UUID.")
+			if !confirmYesNo("Continue with remap", false) {
+				return errors.New("aborted by operator (target-id remap not confirmed)")
+			}
+		}
 	}
 
 	// Snapshot the pre-mutation state so the regression-probe guard can
@@ -300,6 +383,21 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 	rec := &targetRecord{Address: "", Readiness: readiness{}}
 	if existing != nil {
 		rec = existing
+	}
+	// Stamp authoritative target ID. When the operator remaps the profile
+	// to a different application UUID, wipe readiness so nothing carries
+	// over from the previous target.
+	rec.TargetID = resolvedTargetID
+	if mappingChanged {
+		rec.Readiness = readiness{
+			SSHReady:      false,
+			SSHReason:     "setup_pending",
+			SSHProbeStage: "not_run",
+		}
+		// A timestamp from a probe against the previous target UUID must
+		// not appear beneath the new UUID, even as history.
+		prev.hasSSH = false
+		prev.wasSSHReady = false
 	}
 
 	// 1) address + ports
@@ -403,12 +501,17 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 	if canRegressionProbe {
 		r, reason := probeSSH(rec)
 		sshReady = r
+		nowStr := time.Now().UTC().Format(time.RFC3339)
+		rec.Readiness.LastSSHProbeAt = nowStr
 		if r {
 			sshReason = ""
 			sshStage = "command_succeeded"
+			rec.Readiness.LastSuccessfulSSHProbeAt = nowStr
 		} else {
 			sshReason = reason
 			sshStage = "auth_succeeded" // best-effort: we know the earlier config had reached command_succeeded
+			// Do NOT clear LastSuccessfulSSHProbeAt — a later failure must
+			// preserve the last known good so the app can display it.
 		}
 	}
 	rec.Readiness.SSHReady = sshReady
@@ -478,18 +581,23 @@ func postConfigureMenu(configDir string, doc *targetsDoc, profile string, rec *t
 		switch strings.TrimSpace(choice) {
 		case "1":
 			ready, reason := probeSSH(rec)
+			nowStr := time.Now().UTC().Format(time.RFC3339)
 			rec.Readiness.SSHReady = ready
+			rec.Readiness.LastSSHProbeAt = nowStr
 			if ready {
 				rec.Readiness.SSHReason = ""
 				rec.Readiness.SSHProbeStage = "command_succeeded"
+				rec.Readiness.LastSuccessfulSSHProbeAt = nowStr
 			} else {
 				rec.Readiness.SSHReason = reason
 				// We reached at least the transport layer if the failure was
 				// not a pure connection error; probeSSH already returns a
 				// specific code, so map conservatively.
 				rec.Readiness.SSHProbeStage = mapProbeStage(reason)
+				// Preserve prior LastSuccessfulSSHProbeAt on failure.
 			}
-			rec.LastWizard = time.Now().UTC().Format(time.RFC3339)
+			// Note: LastWizard is NOT updated here — this is a probe, not a
+			// wizard save. LastWizard remains the last configure-time write.
 			doc.Targets[profile] = rec
 			if werr := writeTargets(configDir, doc); werr != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not persist probe result: %v\n", werr)
@@ -552,7 +660,8 @@ func RunProbe(args []string) int {
 	fs := flag.NewFlagSet("target probe", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	configDir := fs.String("config-dir", "/config", "Writable target-config directory.")
-	profile := fs.String("profile", "", "target_profile_id to probe.")
+	profile := fs.String("profile", "", "Local profile identifier (targets.json map key).")
+	targetID := fs.String("target-id", "", "Optional assertion: expected application target UUID for this profile. Never populates or changes the record; a mismatch fails the probe.")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -560,12 +669,16 @@ func RunProbe(args []string) int {
 		fmt.Fprintln(os.Stderr, "target probe: --profile is required.")
 		return 2
 	}
-	if !isProfileUUID(*profile) {
-		fmt.Fprintln(os.Stderr, "target probe: --profile must be a valid target-profile UUID (v4).")
+	if !isSafeProfileName(*profile) {
+		fmt.Fprintln(os.Stderr, "target probe: --profile must be a safe identifier (letters, digits, dot, dash, underscore).")
 		return 2
 	}
 	if strings.TrimSpace(*configDir) == "" {
 		fmt.Fprintln(os.Stderr, "target probe: --config-dir is required.")
+		return 2
+	}
+	if strings.TrimSpace(*targetID) != "" && canonicalUUID(*targetID) == "" {
+		fmt.Fprintln(os.Stderr, "target probe: --target-id must be a valid target-profile UUID (v4).")
 		return 2
 	}
 
@@ -580,16 +693,35 @@ func RunProbe(args []string) int {
 		return 1
 	}
 
+	// Assertion-only: `target probe` never populates or rewrites TargetID.
+	// If the operator supplied --target-id, it must match the record's
+	// currently resolved identity, otherwise we refuse the probe rather
+	// than silently probing under an unexpected mapping.
+	recResolved, rerr := EffectiveTargetID(*profile, rec)
+	if rerr != nil {
+		fmt.Fprintln(os.Stderr, "target probe:", rerr.Error()+" — run `target configure --profile "+*profile+" --target-id <uuid>` to set the application target UUID.")
+		return 1
+	}
+	if asserted := canonicalUUID(*targetID); asserted != "" && asserted != recResolved {
+		fmt.Fprintln(os.Stderr, "target probe: target_id_mismatch (record resolves to "+recResolved+", asserted "+asserted+"). Refusing to probe without reconfiguration.")
+		return 1
+	}
+
 	ready, reason := probeSSH(rec)
+	nowStr := time.Now().UTC().Format(time.RFC3339)
 	rec.Readiness.SSHReady = ready
+	rec.Readiness.LastSSHProbeAt = nowStr
 	if ready {
 		rec.Readiness.SSHReason = ""
 		rec.Readiness.SSHProbeStage = "command_succeeded"
+		rec.Readiness.LastSuccessfulSSHProbeAt = nowStr
 	} else {
 		rec.Readiness.SSHReason = reason
 		rec.Readiness.SSHProbeStage = mapProbeStage(reason)
+		// Preserve prior LastSuccessfulSSHProbeAt on failure.
 	}
-	rec.LastWizard = time.Now().UTC().Format(time.RFC3339)
+	// LastWizard intentionally NOT updated by target probe: probe time and
+	// wizard save time are distinct facts.
 	doc.Targets[*profile] = rec
 	if err := writeTargets(*configDir, doc); err != nil {
 		fmt.Fprintln(os.Stderr, "target probe: write failed:", err.Error())

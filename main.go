@@ -222,6 +222,12 @@ func main() {
 
 	// Create supervisor
 	supervisor := NewSupervisor(store, backend)
+	// Point the supervisor at the same config dir the `target configure` /
+	// `target probe` CLIs write targets.json into, so persisted SSH
+	// readiness (per-target) can be published on the heartbeat manifest.
+	supervisor.SetTargetConfigDir(configDir)
+
+
 
 	// Register available adapters — built-in only, no dynamic plugins.
 	// The concrete set is build-tagged: adapters_full.go (default) registers

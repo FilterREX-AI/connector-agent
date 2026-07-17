@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/filterrex-ai/connector-agent/targetconfigure"
 )
 
 
@@ -26,12 +28,13 @@ type Supervisor struct {
 	adapters      map[string]AdapterFactory
 	backend       *BackendClient
 	policy        RetryPolicy
-	uploadQueue   *UploadQueue           // shared upload queue (nil = inline)
-	localDB       *LocalDB               // hybrid mode local DB (nil = disabled)
-	localAPIURL   string                 // LAN URL for local API server
-	localAPIToken string                 // pre-shared token for local API
-	failedRetryAt map[string]time.Time   // targetID -> next allowed retry time
-	failedRetries map[string]int         // targetID -> consecutive retry count
+	uploadQueue     *UploadQueue         // shared upload queue (nil = inline)
+	localDB         *LocalDB             // hybrid mode local DB (nil = disabled)
+	localAPIURL     string               // LAN URL for local API server
+	localAPIToken   string               // pre-shared token for local API
+	targetConfigDir string               // dir owned by `target configure` (targets.json)
+	failedRetryAt   map[string]time.Time // targetID -> next allowed retry time
+	failedRetries   map[string]int       // targetID -> consecutive retry count
 	// lastDegradedLog rate-limits the agent.degraded
 	// warning so it fires at most once per 5 minutes
 	// instead of every watchdog scan.
@@ -86,6 +89,17 @@ func (s *Supervisor) GetLocalAPIURL() string {
 func (s *Supervisor) SetLocalAPIToken(token string) {
 	s.mu.Lock()
 	s.localAPIToken = token
+	s.mu.Unlock()
+}
+
+// SetTargetConfigDir registers the directory the `target configure` /
+// `target probe` commands write `targets.json` to. When set, the heartbeat
+// capability manifest merges each profile's persisted SSH readiness into
+// the Brocade `per_target` map. Safe to leave unset — SSH readiness is
+// simply omitted from the manifest.
+func (s *Supervisor) SetTargetConfigDir(dir string) {
+	s.mu.Lock()
+	s.targetConfigDir = dir
 	s.mu.Unlock()
 }
 
@@ -977,7 +991,23 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 		}
 		brocade.PerTarget = blocked
 	} else {
-		brocade.PerTarget = BrocadeRESTReadinessSnapshot()
+		restSnap := BrocadeRESTReadinessSnapshot()
+		// Best-effort merge of SSH readiness persisted by `target configure`
+		// / `target probe`. Load errors are logged and dropped; REST
+		// readiness still publishes.
+		var sshSnap map[string]targetconfigure.SSHReadinessSnapshot
+		if s.targetConfigDir != "" {
+			var lerr error
+			var warns []targetconfigure.SnapshotLoadWarning
+			sshSnap, warns, lerr = targetconfigure.LoadSSHReadinessSnapshot(s.targetConfigDir)
+			if lerr != nil {
+				fmt.Printf("[supervisor] warn: load ssh readiness: %v\n", lerr)
+			}
+			for _, w := range warns {
+				fmt.Printf("[supervisor] warn: %s\n", w.String())
+			}
+		}
+		brocade.PerTarget = mergeBrocadePerTargetReadiness(restSnap, sshSnap, time.Now().UTC())
 	}
 	capStatus := map[string]CapabilityStatusInfo{
 		CapabilityCollectBrocadeEvidenceBundleV1: brocade,
