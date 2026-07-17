@@ -78,12 +78,15 @@ func dispatch(
 		if len(args) >= 2 && args[1] == "configure" {
 			return true, runTargetConfigure(args[2:])
 		}
+		if len(args) >= 2 && args[1] == "probe" {
+			return true, targetconfigure.RunProbe(args[2:])
+		}
 		// Fail-closed: unknown "target" subcommand must not silently boot the daemon.
 		sub := ""
 		if len(args) >= 2 {
 			sub = strings.Join(args[1:], " ")
 		}
-		fmt.Fprintf(stderr, "unknown target subcommand: %q (supported: configure)\n", sub)
+		fmt.Fprintf(stderr, "unknown target subcommand: %q (supported: configure, probe)\n", sub)
 		return true, 2
 	}
 

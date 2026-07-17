@@ -431,11 +431,7 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 		return err
 	}
 
-	fmt.Println("\nSaved.")
-	fmt.Printf("  Live Workbench queries        %s\n", stateLine(restReady, restReason))
-	fmt.Printf("  SSH evidence collection       %s\n", stateLine(sshReady, sshReason))
-	fmt.Printf("  Key                           %s · %s\n", describeKey(rec.SSH), rec.SSH.KeyOrigin)
-	fmt.Printf("  Key fingerprint               %s\n", rec.SSH.KeyFingerprintSHA256)
+	printStatusBlock(rec)
 	if !restReady || !sshReady {
 		fmt.Println("\nNext step: after installing the public key on the switch (`sshutil importpubkey`),")
 		fmt.Println("run `connector-agent target probe --profile <uuid>` to prove end-to-end SSH readiness.")
@@ -443,7 +439,167 @@ func run(configDir, stateDir, profile string, kc keyChoice) error {
 	if sshPubPath != "" {
 		fmt.Printf("\nSSH public key to install on the switch (read-only account):\n  %s\n", sshPubPath)
 	}
+
+	// Post-configure interactive menu — NEVER auto-probes. The default action
+	// is "finish and test later" so a first-run setup that has not yet had
+	// `sshutil importpubkey` performed on the switch cannot deterministically
+	// publish a misleading auth failure. This is also the ONLY entry point
+	// that will move a `setup_pending` record forward inside the wizard: we
+	// deliberately never auto-forward-probe based on unchanged inputs alone.
+	if !sshReady {
+		postConfigureMenu(configDir, doc, profile, rec, sshPubPath)
+	}
 	return nil
+}
+
+// printStatusBlock renders the same four-line status block from both the
+// wizard save path and `target probe`. Kept in one place so operators see an
+// identical shape regardless of which command last touched the record.
+func printStatusBlock(rec *targetRecord) {
+	fmt.Println("\nSaved.")
+	fmt.Printf("  Live Workbench queries        %s\n", stateLine(rec.Readiness.RESTReady, rec.Readiness.RESTReason))
+	fmt.Printf("  SSH evidence collection       %s\n", stateLine(rec.Readiness.SSHReady, rec.Readiness.SSHReason))
+	if rec.SSH != nil {
+		fmt.Printf("  Key                           %s · %s\n", describeKey(rec.SSH), rec.SSH.KeyOrigin)
+		fmt.Printf("  Key fingerprint               %s\n", rec.SSH.KeyFingerprintSHA256)
+	}
+}
+
+// postConfigureMenu offers an explicit, operator-driven verification step
+// after configure. It NEVER runs a probe without an unambiguous "yes, the key
+// is on the switch, test SSH now" choice. Default is "finish and test later".
+func postConfigureMenu(configDir string, doc *targetsDoc, profile string, rec *targetRecord, sshPubPath string) {
+	for {
+		fmt.Println("\nHas the displayed public key been imported on the switch?")
+		fmt.Println("  1) Yes — test SSH now")
+		fmt.Println("  2) Show import instructions")
+		fmt.Println("  3) Finish setup and test later")
+		choice := prompt("Choice", "3")
+		switch strings.TrimSpace(choice) {
+		case "1":
+			ready, reason := probeSSH(rec)
+			rec.Readiness.SSHReady = ready
+			if ready {
+				rec.Readiness.SSHReason = ""
+				rec.Readiness.SSHProbeStage = "command_succeeded"
+			} else {
+				rec.Readiness.SSHReason = reason
+				// We reached at least the transport layer if the failure was
+				// not a pure connection error; probeSSH already returns a
+				// specific code, so map conservatively.
+				rec.Readiness.SSHProbeStage = mapProbeStage(reason)
+			}
+			rec.LastWizard = time.Now().UTC().Format(time.RFC3339)
+			doc.Targets[profile] = rec
+			if werr := writeTargets(configDir, doc); werr != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not persist probe result: %v\n", werr)
+			}
+			printStatusBlock(rec)
+			if !ready {
+				fmt.Println("\nSSH probe did not authenticate. Verify `sshutil importpubkey`")
+				fmt.Println("on the switch loaded the correct public key for this account, then")
+				fmt.Println("re-run `connector-agent target probe --profile <uuid>`.")
+			}
+			return
+		case "2":
+			fmt.Println("\nOn Brocade Fabric OS, install the collector public key with:")
+			fmt.Println("  sshutil importpubkey")
+			if sshPubPath != "" {
+				fmt.Printf("Public key file (stage it on an SCP/SFTP server the switch can reach):\n  %s\n", sshPubPath)
+			}
+			fmt.Println("Use the read-only switch account (e.g. filterrex_ro). `sshutil allowuser` is for")
+			fmt.Println("switch-initiated outgoing SSH and is NOT required for connector login.")
+			continue
+		case "", "3":
+			return
+		default:
+			fmt.Println("Please enter 1, 2, or 3.")
+			continue
+		}
+	}
+}
+
+// mapProbeStage narrows a probeSSH failure reason to the closest SSHProbeStage
+// value. We stay conservative: unknown failures fall back to `dial_ok` (we
+// connected but could not authenticate) rather than claiming a stage we did
+// not actually reach.
+func mapProbeStage(reason string) string {
+	switch reason {
+	case "ssh_connection_failed":
+		return "dial_failed"
+	case "host_key_verification_failed", "known_hosts_missing":
+		return "host_key_verification_failed"
+	case "ssh_auth_failed":
+		return "auth_failed"
+	case "read_only_probe_failed":
+		return "auth_ok"
+	case "missing_ssh_key":
+		return "not_run"
+	default:
+		return "auth_failed"
+	}
+}
+
+// RunProbe is the entry point for `connector-agent target probe`. It NEVER
+// mutates address/port/username/key/host-key state — it only re-runs the SSH
+// probe against the existing on-disk configuration and refreshes the readiness
+// record. Exit codes mirror Run:
+//
+//	0 — probe succeeded (or record updated with a specific failure reason)
+//	1 — flow error (missing config, unreadable targets.json)
+//	2 — invalid CLI usage
+func RunProbe(args []string) int {
+	fs := flag.NewFlagSet("target probe", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configDir := fs.String("config-dir", "/config", "Writable target-config directory.")
+	profile := fs.String("profile", "", "target_profile_id to probe.")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(*profile) == "" {
+		fmt.Fprintln(os.Stderr, "target probe: --profile is required.")
+		return 2
+	}
+	if !isProfileUUID(*profile) {
+		fmt.Fprintln(os.Stderr, "target probe: --profile must be a valid target-profile UUID (v4).")
+		return 2
+	}
+	if strings.TrimSpace(*configDir) == "" {
+		fmt.Fprintln(os.Stderr, "target probe: --config-dir is required.")
+		return 2
+	}
+
+	doc, err := loadTargets(*configDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "target probe:", err.Error())
+		return 1
+	}
+	rec := doc.Targets[*profile]
+	if rec == nil || rec.SSH == nil {
+		fmt.Fprintln(os.Stderr, "target probe: no SSH configuration exists for this profile — run `target configure` first.")
+		return 1
+	}
+
+	ready, reason := probeSSH(rec)
+	rec.Readiness.SSHReady = ready
+	if ready {
+		rec.Readiness.SSHReason = ""
+		rec.Readiness.SSHProbeStage = "command_succeeded"
+	} else {
+		rec.Readiness.SSHReason = reason
+		rec.Readiness.SSHProbeStage = mapProbeStage(reason)
+	}
+	rec.LastWizard = time.Now().UTC().Format(time.RFC3339)
+	doc.Targets[*profile] = rec
+	if err := writeTargets(*configDir, doc); err != nil {
+		fmt.Fprintln(os.Stderr, "target probe: write failed:", err.Error())
+		return 1
+	}
+	printStatusBlock(rec)
+	if !ready {
+		return 0 // probe result persisted; readiness reason speaks for itself
+	}
+	return 0
 }
 
 func describeKey(s *sshEntry) string {
