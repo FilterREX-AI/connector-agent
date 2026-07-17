@@ -34,7 +34,11 @@ PKG_VERSION="${VERSION#v}"
 # RPM Version: field forbids '-'. Convert pre-release separator to '~' so that
 # rpm sorts 0.1.0~preview.5 < 0.1.0 (correct pre-release ordering). Deb keeps
 # the upstream '-' form since dpkg allows it in upstream_version.
-RPM_VERSION="${PKG_VERSION//-/~}"
+              # NOTE: '\~' is required — bash performs tilde expansion on the
+              # replacement string in ${var//pat/repl}, so a bare '~' would
+              # expand to $HOME and mangle the version (e.g. 0.1.0-preview.10
+              # → 0.1.0/home/runnerpreview.10). Escaping keeps the literal '~'.
+RPM_VERSION="${PKG_VERSION//-/\~}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUT_DIR="/tmp"
