@@ -967,10 +967,17 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 	// Binary capabilities compiled into this build. Add new entries here
 	// once their agent-side implementation ships; DO NOT gate this list on
 	// local readiness — that's what CapabilityStatus reports.
+	//
+	// NOTE: probe_brocade_ssh_readiness_v1 is intentionally NOT advertised
+	// yet. Advertising it would enable the app's "Test from agent now"
+	// button, but this build has no relay handler to execute a
+	// remote-triggered probe. It will be added in preview.16 alongside the
+	// edge action, relay job, connector claim/handler, and forced
+	// heartbeat wiring.
 	binaryCaps := []string{
 		CapabilityCollectBrocadeEvidenceBundleV1,
-		CapabilityProbeBrocadeSshReadinessV1,
 	}
+
 
 	brocade := evaluateBrocadeCapabilityStatus(lanOnly)
 	if lanOnly {
