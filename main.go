@@ -177,6 +177,22 @@ func main() {
 		}
 	}
 
+	// Preview.18: mutable readiness sidecar lives on a WRITABLE path,
+	// distinct from the (possibly read-only) targets.json mount. Default
+	// <configDir>/state; overridable for tests and unusual layouts.
+	brocadeRuntimeStateDir := strings.TrimSpace(os.Getenv("FILTERREX_BROCADE_RUNTIME_STATE_DIR"))
+	if brocadeRuntimeStateDir == "" {
+		brocadeRuntimeStateDir = filepath.Join(configDir, "state")
+	}
+	if err := os.MkdirAll(brocadeRuntimeStateDir, 0o700); err != nil {
+		audit.Warn("host.startup",
+			"Brocade runtime-state directory not writable — remote SSH readiness probes will fail with runtime_state_unwritable",
+			F("path", brocadeRuntimeStateDir), F("error", err.Error()))
+	} else {
+		audit.Info("host.startup", "Brocade runtime-state directory resolved",
+			F("path", brocadeRuntimeStateDir))
+	}
+
 	hybridMode := envBool("FILTERREX_HYBRID_MODE")
 	if hybridMode {
 		audit.Info("host.startup",
@@ -264,6 +280,7 @@ func main() {
 	// This is /etc/filterrex/targets by default (bind-mounted from the
 	// host's /opt/filterrex/secure) — NOT the top-level configDir.
 	supervisor.SetTargetConfigDir(brocadeTargetsDir)
+	supervisor.SetRuntimeStateDir(brocadeRuntimeStateDir)
 
 
 
@@ -472,9 +489,9 @@ func main() {
 		// is on) the localRelayHandler both execute the `brocade-probe`
 		// platform. Give both a config-dir + heartbeat trigger so the
 		// probe capability can be advertised.
-		syncManager.RelayHandler().SetProbeContext(brocadeTargetsDir, syncManager)
+		syncManager.RelayHandler().SetProbeContext(brocadeTargetsDir, brocadeRuntimeStateDir, syncManager)
 		if localRelayHandler != nil {
-			localRelayHandler.SetProbeContext(brocadeTargetsDir, syncManager)
+			localRelayHandler.SetProbeContext(brocadeTargetsDir, brocadeRuntimeStateDir, syncManager)
 		}
 		// Advertise probe_brocade_ssh_readiness_v1 only once we know a
 		// probe handler is fully wired. LAN-only is re-checked each

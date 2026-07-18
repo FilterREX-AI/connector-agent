@@ -101,11 +101,12 @@ type RelayHandler struct {
 	// Change-operation policy — gates "change" safety level operations
 	changePolicy ChangePolicyConfig
 
-	// Remote SSH readiness probe context (preview.16). Populated by
-	// SetProbeContext; both fields required before the capability is
-	// advertised or a probe command is accepted.
-	probeConfigDir   string
-	probeSyncTrigger SyncTrigger
+	// Remote SSH readiness probe context (preview.16, expanded preview.18).
+	// Populated by SetProbeContext; all three fields required before the
+	// capability is advertised or a probe command is accepted.
+	probeConfigDir       string
+	probeRuntimeStateDir string
+	probeSyncTrigger     SyncTrigger
 }
 
 // NewRelayHandler creates a relay handler with change-operation policy.

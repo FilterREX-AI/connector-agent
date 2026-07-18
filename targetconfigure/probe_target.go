@@ -18,6 +18,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -85,30 +86,49 @@ func acquireTargetsLock(configDir string) (func(), error) {
 	}, nil
 }
 
-// RunProbeForTarget resolves the record whose authoritative target UUID equals
-// targetID, runs probeSSH, and atomically persists the new readiness. It is
-// safe for concurrent callers (CLI + relay handler): the on-disk lock file
-// serializes read-modify-write.
-//
-// Returned ProbeOutcome is populated even when Ready=false — a failed probe
-// is still new readiness information. err is non-nil ONLY for genuine
-// infrastructure failures; a legitimate authentication failure returns
-// (outcome, nil) with Ready=false and a bounded Reason.
-func RunProbeForTarget(ctx context.Context, configDir, targetID string) (ProbeOutcome, error) {
-	if configDir == "" {
+// RunProbeForTarget is the legacy writable-targets probe path used by the
+// interactive `target probe` CLI. It read-modify-writes targets.json under
+// the on-disk lock in targetsDir. Requires targetsDir to be writable.
+func RunProbeForTarget(ctx context.Context, targetsDir, targetID string) (ProbeOutcome, error) {
+	return runProbeForTargetImpl(ctx, targetsDir, "", targetID)
+}
+
+// RunProbeForTargetSidecar is the remote/daemon probe path. It reads
+// targets.json from a possibly read-only targetsDir (no lock) and persists
+// the outcome into the runtime-state sidecar under runtimeStateDir. This is
+// what the connector's brocade-probe relay handler invokes so a read-only
+// mount of /etc/filterrex/targets never blocks a probe.
+func RunProbeForTargetSidecar(ctx context.Context, targetsDir, runtimeStateDir, targetID string) (ProbeOutcome, error) {
+	if strings.TrimSpace(runtimeStateDir) == "" {
+		return ProbeOutcome{}, ErrConfigDirRequired
+	}
+	return runProbeForTargetImpl(ctx, targetsDir, runtimeStateDir, targetID)
+}
+
+func runProbeForTargetImpl(ctx context.Context, targetsDir, runtimeStateDir, targetID string) (ProbeOutcome, error) {
+	if targetsDir == "" {
 		return ProbeOutcome{}, ErrConfigDirRequired
 	}
 	canon := canonicalUUID(targetID)
 	if canon == "" {
 		return ProbeOutcome{}, ErrInvalidTargetID
 	}
-	release, err := acquireTargetsLock(configDir)
-	if err != nil {
-		return ProbeOutcome{}, err
-	}
-	defer release()
 
-	doc, err := loadTargets(configDir)
+	useSidecar := strings.TrimSpace(runtimeStateDir) != ""
+
+	// Legacy path locks the targets dir. Sidecar path reads targets.json
+	// without a lock (writes there are atomic renames).
+	var releaseTargets func()
+	if !useSidecar {
+		r, err := acquireTargetsLock(targetsDir)
+		if err != nil {
+			return ProbeOutcome{}, err
+		}
+		releaseTargets = r
+		defer releaseTargets()
+	}
+
+	doc, err := loadTargets(targetsDir)
 	if err != nil {
 		return ProbeOutcome{}, err
 	}
@@ -116,7 +136,6 @@ func RunProbeForTarget(ctx context.Context, configDir, targetID string) (ProbeOu
 		return ProbeOutcome{}, ErrTargetNotConfigured
 	}
 
-	// Resolve by authoritative target_id. Duplicates fail closed.
 	var (
 		matchProfile string
 		matchRec     *targetRecord
@@ -141,43 +160,67 @@ func RunProbeForTarget(ctx context.Context, configDir, targetID string) (ProbeOu
 		return ProbeOutcome{}, ErrDuplicateTargetID
 	}
 
-	// Cooperate with ctx cancellation without cancelling an in-flight ssh
-	// dial (probeSSH has its own 8s timeout).
 	if err := ctx.Err(); err != nil {
 		return ProbeOutcome{}, err
 	}
 
 	ready, reason := probeSSH(matchRec)
 	nowStr := time.Now().UTC().Format(time.RFC3339)
-	matchRec.Readiness.SSHReady = ready
-	matchRec.Readiness.LastSSHProbeAt = nowStr
-	if ready {
-		matchRec.Readiness.SSHReason = ""
-		matchRec.Readiness.SSHProbeStage = "command_succeeded"
-		matchRec.Readiness.LastSuccessfulSSHProbeAt = nowStr
-	} else {
-		matchRec.Readiness.SSHReason = reason
-		matchRec.Readiness.SSHProbeStage = mapProbeStage(reason)
-		// Preserve prior LastSuccessfulSSHProbeAt on failure.
+	stage := "command_succeeded"
+	if !ready {
+		stage = mapProbeStage(reason)
 	}
-	doc.Targets[matchProfile] = matchRec
-	if err := writeTargets(configDir, doc); err != nil {
-		return ProbeOutcome{}, err
+	lastSuccess := matchRec.Readiness.LastSuccessfulSSHProbeAt
+	if ready {
+		lastSuccess = nowStr
 	}
 
-	// Build the bounded outcome. Fingerprint fields come from the persisted
-	// wizard state; nothing is derived from live key material here.
+	if useSidecar {
+		rec := RuntimeReadinessRecord{
+			TargetID:              canon,
+			ConfigFingerprint:     ConfigFingerprintFromRecord(matchRec),
+			SSHReady:              ready,
+			SSHReason:             "",
+			SSHProbeStage:         stage,
+			LastProbeAt:           nowStr,
+			LastSuccessfulProbeAt: lastSuccess,
+		}
+		if !ready {
+			rec.SSHReason = reason
+		}
+		if err := UpsertRuntimeReadiness(runtimeStateDir, rec); err != nil {
+			return ProbeOutcome{}, err
+		}
+	} else {
+		matchRec.Readiness.SSHReady = ready
+		matchRec.Readiness.LastSSHProbeAt = nowStr
+		matchRec.Readiness.SSHProbeStage = stage
+		if ready {
+			matchRec.Readiness.SSHReason = ""
+			matchRec.Readiness.LastSuccessfulSSHProbeAt = nowStr
+		} else {
+			matchRec.Readiness.SSHReason = reason
+		}
+		doc.Targets[matchProfile] = matchRec
+		if err := writeTargets(targetsDir, doc); err != nil {
+			return ProbeOutcome{}, err
+		}
+	}
+
 	out := ProbeOutcome{
 		Ready:                   ready,
-		Stage:                   matchRec.Readiness.SSHProbeStage,
-		Reason:                  matchRec.Readiness.SSHReason,
-		LastProbeAt:             matchRec.Readiness.LastSSHProbeAt,
-		LastSuccessfulProbeAt:   matchRec.Readiness.LastSuccessfulSSHProbeAt,
+		Stage:                   stage,
+		Reason:                  "",
+		LastProbeAt:             nowStr,
+		LastSuccessfulProbeAt:   lastSuccess,
 		SSHKeyAlgorithm:         matchRec.SSH.KeyAlgorithm,
 		SSHKeyBits:              matchRec.SSH.KeyBits,
 		SSHKeyOrigin:            matchRec.SSH.KeyOrigin,
 		SSHKeyFingerprintSHA256: matchRec.SSH.KeyFingerprintSHA256,
 		SSHUsername:             matchRec.SSH.Username,
+	}
+	if !ready {
+		out.Reason = reason
 	}
 	if fp, ferr := readKnownHostFingerprint(matchRec.SSH.KnownHostsPath, matchRec.Address); ferr == nil {
 		out.SwitchHostKeyFingerprint = fp

@@ -66,22 +66,35 @@ func (w SnapshotLoadWarning) String() string {
 	return fmt.Sprintf("target.readiness.skipped reason=%s profile=%s", w.Reason, w.ProfileName)
 }
 
-// LoadSSHReadinessSnapshot reads targets.json and returns SSH-only readiness
-// keyed by CANONICAL application target UUID. Records that have no SSH
-// configuration, no resolvable target_id, or a target_id shared with another
-// record are omitted.
-//
-// An empty configDir returns (nil, nil, nil): the connector was not started
-// with a target-config directory and there is nothing to publish.
+// LoadSSHReadinessSnapshot is the legacy single-argument loader kept for
+// tests and callers that never enrolled a runtime-state sidecar. It is a
+// pass-through to LoadSSHReadinessSnapshotWithRuntime with runtimeStateDir="",
+// so readiness comes purely from targets.json.
 func LoadSSHReadinessSnapshot(configDir string) (map[string]SSHReadinessSnapshot, []SnapshotLoadWarning, error) {
-	if configDir == "" {
+	return LoadSSHReadinessSnapshotWithRuntime(configDir, "")
+}
+
+// LoadSSHReadinessSnapshotWithRuntime reads targets.json (immutable identity
+// + key metadata) from targetsDir and overlays mutable probe results from
+// the runtime-state sidecar under runtimeStateDir. See runtime_readiness.go
+// for the sidecar contract.
+//
+// Ordering:
+//  1. Load targets.json (no lock; writer uses atomic rename).
+//  2. Bucket resolvable records by canonical target UUID.
+//  3. Overlay sidecar entries whose ConfigFingerprint matches the current
+//     record fingerprint. On mismatch, prefer the in-record legacy readiness
+//     rather than silently promoting a stale probe.
+//
+// An empty targetsDir returns (nil, nil, nil): nothing to publish.
+func LoadSSHReadinessSnapshotWithRuntime(targetsDir, runtimeStateDir string) (map[string]SSHReadinessSnapshot, []SnapshotLoadWarning, error) {
+	if targetsDir == "" {
 		return nil, nil, nil
 	}
-	// Fast path: file absent → no SSH snapshots yet, not an error.
-	if _, err := os.Stat(filepath.Join(configDir, targetsFile)); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(targetsDir, targetsFile)); os.IsNotExist(err) {
 		return nil, nil, nil
 	}
-	doc, err := loadTargets(configDir)
+	doc, err := loadTargets(targetsDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -89,10 +102,9 @@ func LoadSSHReadinessSnapshot(configDir string) (map[string]SSHReadinessSnapshot
 		return nil, nil, nil
 	}
 
-	var warnings []SnapshotLoadWarning
+	sidecar, _ := LoadRuntimeReadiness(runtimeStateDir) // best-effort
 
-	// Pass 1: bucket resolvable records by canonical target_id. Records
-	// without an SSH block are skipped silently (no readiness to publish).
+	var warnings []SnapshotLoadWarning
 	type resolved struct {
 		profileName string
 		rec         *targetRecord
@@ -113,8 +125,6 @@ func LoadSSHReadinessSnapshot(configDir string) (map[string]SSHReadinessSnapshot
 		buckets[targetID] = append(buckets[targetID], resolved{profileName: profileName, rec: rec})
 	}
 
-	// Pass 2: publish only single-record buckets. Duplicates are ambiguous;
-	// we refuse to guess which local profile authorizes the shared target.
 	out := make(map[string]SSHReadinessSnapshot, len(buckets))
 	for targetID, matches := range buckets {
 		if len(matches) != 1 {
@@ -140,6 +150,23 @@ func LoadSSHReadinessSnapshot(configDir string) (map[string]SSHReadinessSnapshot
 		}
 		if fp, err := readKnownHostFingerprint(rec.SSH.KnownHostsPath, rec.Address); err == nil {
 			s.SwitchHostKeyFingerprint = fp
+		}
+		// Overlay sidecar readiness when the fingerprint matches the
+		// current record. Mismatches are silently ignored: the operator
+		// changed keys/username/address and the last probe is no longer
+		// authoritative.
+		if entry, ok := sidecar[targetID]; ok {
+			if entry.ConfigFingerprint == ConfigFingerprintFromRecord(rec) {
+				s.SSHReady = entry.SSHReady
+				s.SSHReason = entry.SSHReason
+				s.SSHProbeStage = entry.SSHProbeStage
+				if entry.LastProbeAt != "" {
+					s.LastProbeAt = entry.LastProbeAt
+				}
+				if entry.LastSuccessfulProbeAt != "" {
+					s.LastSuccessfulProbeAt = entry.LastSuccessfulProbeAt
+				}
+			}
 		}
 		out[targetID] = s
 	}

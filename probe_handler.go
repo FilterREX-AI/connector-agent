@@ -43,11 +43,13 @@ const (
 	OperationProbeSSHReadiness = "probe.ssh.readiness"
 )
 
-// SetProbeContext wires the target-config directory and heartbeat trigger.
-// Advertising `probe_brocade_ssh_readiness_v1` is gated on both being set
-// (see Supervisor.BuildCapabilityManifest).
-func (rh *RelayHandler) SetProbeContext(configDir string, trigger SyncTrigger) {
-	rh.probeConfigDir = strings.TrimSpace(configDir)
+// SetProbeContext wires the target-config directory, the writable
+// runtime-state directory used for the readiness sidecar, and the
+// heartbeat trigger. Advertising `probe_brocade_ssh_readiness_v1` is gated
+// on all three being set (see Supervisor.BuildCapabilityManifest).
+func (rh *RelayHandler) SetProbeContext(targetsDir, runtimeStateDir string, trigger SyncTrigger) {
+	rh.probeConfigDir = strings.TrimSpace(targetsDir)
+	rh.probeRuntimeStateDir = strings.TrimSpace(runtimeStateDir)
 	rh.probeSyncTrigger = trigger
 }
 
@@ -55,7 +57,7 @@ func (rh *RelayHandler) SetProbeContext(configDir string, trigger SyncTrigger) {
 // a remote probe. Supervisor uses this to conditionally advertise the
 // capability so a stale binary cannot enable the UI button.
 func (rh *RelayHandler) ProbeReady() bool {
-	return rh != nil && rh.probeConfigDir != "" && rh.probeSyncTrigger != nil
+	return rh != nil && rh.probeConfigDir != "" && rh.probeRuntimeStateDir != "" && rh.probeSyncTrigger != nil
 }
 
 // executeProbeSSHReadiness is invoked by RelayHandler.executeCommand when
@@ -98,7 +100,7 @@ func (rh *RelayHandler) executeProbeSSHReadiness(cmd RelayCommand, start time.Ti
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	outcome, err := targetconfigure.RunProbeForTarget(ctx, rh.probeConfigDir, cmd.TargetProfileID)
+	outcome, err := targetconfigure.RunProbeForTargetSidecar(ctx, rh.probeConfigDir, rh.probeRuntimeStateDir, cmd.TargetProfileID)
 	if err != nil {
 		// Bounded, code-level errors are surfaced verbatim so the UI can
 		// map them to operator copy. Everything else collapses to a
@@ -113,6 +115,10 @@ func (rh *RelayHandler) executeProbeSSHReadiness(cmd RelayCommand, start time.Ti
 			code = "invalid_target_id"
 		case errors.Is(err, targetconfigure.ErrProbeLockFailed):
 			code = "probe_lock_timeout"
+		case errors.Is(err, targetconfigure.ErrRuntimeStateLockFailed):
+			code = "runtime_state_lock_timeout"
+		case errors.Is(err, targetconfigure.ErrRuntimeStateUnwritable):
+			code = "runtime_state_unwritable"
 		case errors.Is(err, targetconfigure.ErrConfigDirRequired):
 			code = "probe_handler_not_configured"
 		}

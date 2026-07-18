@@ -34,7 +34,8 @@ type Supervisor struct {
 	localDB         *LocalDB             // hybrid mode local DB (nil = disabled)
 	localAPIURL     string               // LAN URL for local API server
 	localAPIToken   string               // pre-shared token for local API
-	targetConfigDir string               // dir owned by `target configure` (targets.json)
+	targetConfigDir      string               // dir owned by `target configure` (targets.json), may be RO for the daemon
+	runtimeStateDir      string               // writable dir for the readiness sidecar (preview.18)
 	failedRetryAt   map[string]time.Time // targetID -> next allowed retry time
 	failedRetries   map[string]int       // targetID -> consecutive retry count
 	// probeCapabilityReadyFn returns true when a fully-wired remote SSH
@@ -119,6 +120,17 @@ func (s *Supervisor) SetTargetConfigDir(dir string) {
 	s.targetConfigDir = dir
 	s.mu.Unlock()
 }
+
+// SetRuntimeStateDir registers the writable directory that holds the
+// per-target readiness sidecar (preview.18). Distinct from
+// SetTargetConfigDir so the daemon can accept a read-only targets.json
+// mount and still persist probe outcomes.
+func (s *Supervisor) SetRuntimeStateDir(dir string) {
+	s.mu.Lock()
+	s.runtimeStateDir = dir
+	s.mu.Unlock()
+}
+
 
 // GetLocalAPIToken returns the local API token.
 func (s *Supervisor) GetLocalAPIToken() string {
@@ -1027,21 +1039,24 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 		if s.targetConfigDir != "" {
 			var lerr error
 			var warns []targetconfigure.SnapshotLoadWarning
-			sshSnap, warns, lerr = targetconfigure.LoadSSHReadinessSnapshot(s.targetConfigDir)
+			sshSnap, warns, lerr = targetconfigure.LoadSSHReadinessSnapshotWithRuntime(s.targetConfigDir, s.runtimeStateDir)
 			if lerr != nil {
 				fmt.Printf("[supervisor] warn: load ssh readiness: %v\n", lerr)
 			}
 			for _, w := range warns {
 				fmt.Printf("[supervisor] warn: %s\n", w.String())
 			}
-			// Per-heartbeat one-liner so operators can grep the host log
-			// to confirm targets.json was read and how many SSH entries
-			// the merge will publish. Never logs secrets or key material.
 			_, statErr := os.Stat(filepath.Join(s.targetConfigDir, "targets.json"))
-			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=%s file_present=%t published=%d warnings=%d\n",
-				s.targetConfigDir, statErr == nil, len(sshSnap), len(warns))
+			runtimePresent := false
+			if s.runtimeStateDir != "" {
+				if _, rerr := os.Stat(filepath.Join(s.runtimeStateDir, "brocade-ssh-readiness.json")); rerr == nil {
+					runtimePresent = true
+				}
+			}
+			fmt.Printf("[supervisor] brocade ssh snapshot: targets_dir=%s targets_present=%t runtime_dir=%s runtime_present=%t published=%d warnings=%d\n",
+				s.targetConfigDir, statErr == nil, s.runtimeStateDir, runtimePresent, len(sshSnap), len(warns))
 		} else {
-			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=<unset> file_present=false published=0 warnings=0\n")
+			fmt.Printf("[supervisor] brocade ssh snapshot: targets_dir=<unset> targets_present=false runtime_dir=%s runtime_present=false published=0 warnings=0\n", s.runtimeStateDir)
 		}
 		brocade.PerTarget = mergeBrocadePerTargetReadiness(restSnap, sshSnap, time.Now().UTC())
 	}
