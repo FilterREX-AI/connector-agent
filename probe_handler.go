@@ -126,16 +126,25 @@ func (rh *RelayHandler) executeProbeSSHReadiness(cmd RelayCommand, start time.Ti
 		case errors.Is(err, targetconfigure.ErrConfigDirRequired):
 			code = "probe_handler_not_configured"
 		}
-		inv := targetconfigure.InspectTargetConfigDir(rh.probeConfigDir)
+		inv := targetconfigure.InspectTargetConfigForTarget(rh.probeConfigDir, cmd.TargetProfileID)
 		audit.Warn("probe.ssh.failed",
 			"Remote SSH readiness probe failed",
 			F("cmd_id", cmd.ID), F("target_profile_id", cmd.TargetProfileID),
 			F("code", code), F("error", err.Error()),
 			F("targets_dir", inv.Dir), F("targets_file", inv.File),
 			F("directory_present", inv.DirectoryPresent),
+			F("directory_readable", inv.DirectoryReadable),
 			F("targets_present", inv.FilePresent),
 			F("targets_readable", inv.FileReadable),
-			F("records_loaded", inv.RecordsLoaded))
+			F("records_loaded", inv.RecordsLoaded),
+			F("target_match_count", inv.TargetMatchCount),
+			F("target_status", inv.ResolvedStatus),
+			F("ssh_username_present", inv.SSHUsernamePresent),
+			F("private_key_present", inv.PrivateKeyPresent),
+			F("private_key_readable", inv.PrivateKeyReadable),
+			F("known_hosts_present", inv.KnownHostsPresent),
+			F("known_hosts_readable", inv.KnownHostsReadable),
+			F("known_hosts_entry_found", inv.KnownHostsEntryFound))
 		return RelayResult{
 			ID:             cmd.ID,
 			ResponseStatus: 200,

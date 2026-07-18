@@ -33,7 +33,7 @@ import (
 	"github.com/filterrex-ai/connector-agent/targetconfigure"
 )
 
-const canonicalBrocadeTargetsDir = "/etc/filterrex/targets"
+const canonicalBrocadeTargetsDir = targetconfigure.DefaultBrocadeTargetsDir
 
 // displayVersion returns the human-facing version string. HostVersion is
 // injected by the build via -ldflags; CI historically passes the git tag
@@ -51,53 +51,16 @@ func displayVersion() string {
 	return "v" + v
 }
 
-type BrocadeTargetsResolution struct {
-	Dir      string
-	File     string
-	Source   string
-	Warning  string
-	Present  bool
-	Readable bool
-}
-
 func resolveBrocadeTargetsDir(envOverride, configDir string) string {
 	return resolveBrocadeTargets(envOverride, configDir).Dir
 }
 
-func resolveBrocadeTargets(envOverride, configDir string) BrocadeTargetsResolution {
+func resolveBrocadeTargets(envOverride, configDir string) targetconfigure.TargetConfigResolution {
 	return resolveBrocadeTargetsWithCanonical(envOverride, configDir, canonicalBrocadeTargetsDir)
 }
 
-func resolveBrocadeTargetsWithCanonical(envOverride, configDir, canonicalDir string) BrocadeTargetsResolution {
-	env := strings.TrimSpace(envOverride)
-	if env != "" {
-		return inspectBrocadeTargetsCandidate(env, "env", "")
-	}
-	canonical := inspectBrocadeTargetsCandidate(canonicalDir, "canonical", "")
-	legacyDir := filepath.Join(configDir, "targets")
-	legacy := inspectBrocadeTargetsCandidate(legacyDir, "legacy", "legacy_targets_dir")
-	if canonical.Readable {
-		if legacy.Readable && legacy.Dir != canonical.Dir {
-			canonical.Warning = "multiple_target_config_sources"
-		}
-		return canonical
-	}
-	if legacy.Readable {
-		return legacy
-	}
-	return canonical
-}
-
-func inspectBrocadeTargetsCandidate(dir, source, warning string) BrocadeTargetsResolution {
-	inv := targetconfigure.InspectTargetConfigDir(dir)
-	return BrocadeTargetsResolution{
-		Dir:      inv.Dir,
-		File:     inv.File,
-		Source:   source,
-		Warning:  warning,
-		Present:  inv.FilePresent,
-		Readable: inv.FileReadable,
-	}
+func resolveBrocadeTargetsWithCanonical(envOverride, configDir, canonicalDir string) targetconfigure.TargetConfigResolution {
+	return targetconfigure.ResolveTargetConfigStoreWithCanonical(envOverride, configDir, canonicalDir)
 }
 
 // targetConfigureRunner matches targetconfigure.Run so main dispatch can be
@@ -132,12 +95,15 @@ func dispatch(
 		if len(args) >= 2 && args[1] == "probe" {
 			return true, targetconfigure.RunProbe(args[2:])
 		}
+		if len(args) >= 2 && args[1] == "doctor" {
+			return true, targetconfigure.RunDoctor(args[2:])
+		}
 		// Fail-closed: unknown "target" subcommand must not silently boot the daemon.
 		sub := ""
 		if len(args) >= 2 {
 			sub = strings.Join(args[1:], " ")
 		}
-		fmt.Fprintf(stderr, "unknown target subcommand: %q (supported: configure, probe)\n", sub)
+		fmt.Fprintf(stderr, "unknown target subcommand: %q (supported: configure, probe, doctor)\n", sub)
 		return true, 2
 	}
 
@@ -205,8 +171,12 @@ func main() {
 		F("source", brocadeTargetsResolution.Source),
 		F("path", brocadeTargetsResolution.Dir),
 		F("file", brocadeTargetsResolution.File),
+		F("directory_present", brocadeTargetsResolution.DirectoryPresent),
+		F("directory_readable", brocadeTargetsResolution.DirectoryReadable),
 		F("targets_present", brocadeTargetsResolution.Present),
-		F("targets_readable", brocadeTargetsResolution.Readable))
+		F("targets_readable", brocadeTargetsResolution.Readable),
+		F("parse_successful", brocadeTargetsResolution.ParseSuccessful),
+		F("records_loaded", brocadeTargetsResolution.RecordsLoaded))
 	if brocadeTargetsResolution.Warning != "" {
 		audit.Warn("host.startup", "Brocade target configuration resolution warning",
 			F("reason", brocadeTargetsResolution.Warning),
