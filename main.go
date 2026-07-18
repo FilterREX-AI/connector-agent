@@ -429,6 +429,22 @@ func main() {
 		audit.Info("sync.reconciled", "Desired-state sync enabled", F("interval", syncInterval.String()))
 		syncMgrPtr = syncManager
 
+		// ── Remote SSH readiness probe wiring (preview.16) ──
+		// The RelayHandler embedded in SyncManager and (when hybrid mode
+		// is on) the localRelayHandler both execute the `brocade-probe`
+		// platform. Give both a config-dir + heartbeat trigger so the
+		// probe capability can be advertised.
+		syncManager.RelayHandler().SetProbeContext(configDir, syncManager)
+		if localRelayHandler != nil {
+			localRelayHandler.SetProbeContext(configDir, syncManager)
+		}
+		// Advertise probe_brocade_ssh_readiness_v1 only once we know a
+		// probe handler is fully wired. LAN-only is re-checked each
+		// heartbeat inside BuildCapabilityManifest.
+		supervisor.SetProbeCapabilityReadyFunc(func() bool {
+			return syncManager.RelayHandler().ProbeReady()
+		})
+
 		// Wire agent-evidence collection into the existing outbound poll.
 		// The handler is invoked by SyncManager.commandPollLoop each tick;
 		// see tickAgentEvidence. It is single-flight and never blocks.

@@ -100,6 +100,12 @@ type RelayHandler struct {
 
 	// Change-operation policy — gates "change" safety level operations
 	changePolicy ChangePolicyConfig
+
+	// Remote SSH readiness probe context (preview.16). Populated by
+	// SetProbeContext; both fields required before the capability is
+	// advertised or a probe command is accepted.
+	probeConfigDir   string
+	probeSyncTrigger SyncTrigger
 }
 
 // NewRelayHandler creates a relay handler with change-operation policy.
@@ -139,7 +145,7 @@ func (rh *RelayHandler) ProcessCommands(commands []RelayCommand) {
 	for _, cmd := range commands {
 		// System commands and ai-fabric probes bypass the live query gate —
 		// they have their own granular checks (or none, since they don't touch targets).
-		if cmd.Platform != "system" && cmd.Platform != "ai-fabric" && !liveQueryEnabled {
+		if cmd.Platform != "system" && cmd.Platform != "ai-fabric" && cmd.Platform != PlatformBrocadeProbe && !liveQueryEnabled {
 			log.Printf("[relay] REJECTED cmd=%s: remote Live Query is disabled on this host (set FILTERREX_REMOTE_LIVE_QUERY=true to enable)", cmd.ID)
 			results = append(results, RelayResult{
 				ID:           cmd.ID,
@@ -185,6 +191,14 @@ func (rh *RelayHandler) executeCommand(cmd RelayCommand) RelayResult {
 	// ── System commands (restart, etc.) ──
 	if cmd.Platform == "system" {
 		return rh.executeSystemCommand(cmd, start)
+	}
+
+	// ── Brocade SSH readiness probe (preview.16) ──
+	// Bypasses the Live Query gate: this is an agent-owned read-only local
+	// action, not a target-side API call, and has its own fixed contract
+	// validation inside the handler.
+	if cmd.Platform == PlatformBrocadeProbe {
+		return rh.executeProbeSSHReadiness(cmd, start)
 	}
 
 	// ── AI Fabric probes — local HTTP reachability check, no target profile ──

@@ -165,6 +165,12 @@ func (sm *SyncManager) Stop() {
 	}
 }
 
+// RelayHandler exposes the sync manager's relay handler so main.go can wire
+// runtime dependencies (e.g. probe context) onto it after construction.
+func (sm *SyncManager) RelayHandler() *RelayHandler {
+	return sm.relayHandler
+}
+
 // TriggerSync wakes the sync loop immediately
 // for an out-of-band desired-state fetch.
 // Non-blocking: if a trigger is already pending,

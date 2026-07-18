@@ -35,10 +35,25 @@ type Supervisor struct {
 	targetConfigDir string               // dir owned by `target configure` (targets.json)
 	failedRetryAt   map[string]time.Time // targetID -> next allowed retry time
 	failedRetries   map[string]int       // targetID -> consecutive retry count
+	// probeCapabilityReadyFn returns true when a fully-wired remote SSH
+	// readiness probe handler is available. When nil or false the
+	// `probe_brocade_ssh_readiness_v1` capability is NOT advertised.
+	probeCapabilityReadyFn func() bool
 	// lastDegradedLog rate-limits the agent.degraded
 	// warning so it fires at most once per 5 minutes
 	// instead of every watchdog scan.
 	lastDegradedLog time.Time
+}
+
+// SetProbeCapabilityReadyFunc installs the runtime predicate used to gate
+// advertisement of `probe_brocade_ssh_readiness_v1`. Wire this AFTER the
+// probe-capable RelayHandler has been fully configured (config dir + sync
+// trigger). Pass a closure so LAN-only mode and later re-wiring are honored
+// each heartbeat.
+func (s *Supervisor) SetProbeCapabilityReadyFunc(fn func() bool) {
+	s.mu.Lock()
+	s.probeCapabilityReadyFn = fn
+	s.mu.Unlock()
 }
 
 // NewSupervisor creates a new supervisor with the given store and backend.
@@ -968,14 +983,15 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 	// once their agent-side implementation ships; DO NOT gate this list on
 	// local readiness — that's what CapabilityStatus reports.
 	//
-	// NOTE: probe_brocade_ssh_readiness_v1 is intentionally NOT advertised
-	// yet. Advertising it would enable the app's "Test from agent now"
-	// button, but this build has no relay handler to execute a
-	// remote-triggered probe. It will be added in preview.16 alongside the
-	// edge action, relay job, connector claim/handler, and forced
-	// heartbeat wiring.
+	// probe_brocade_ssh_readiness_v1 is advertised only when a probe
+	// handler is fully wired (config-dir + heartbeat trigger). See
+	// Supervisor.SetProbeCapabilityReadyFunc; before wiring lands we would
+	// enable a UI button with no matching relay handler.
 	binaryCaps := []string{
 		CapabilityCollectBrocadeEvidenceBundleV1,
+	}
+	if s.probeCapabilityReadyFn != nil && s.probeCapabilityReadyFn() && !lanOnly {
+		binaryCaps = append(binaryCaps, CapabilityProbeBrocadeSshReadinessV1)
 	}
 
 
