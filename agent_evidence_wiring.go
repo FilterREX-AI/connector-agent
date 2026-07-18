@@ -90,10 +90,13 @@ func codedFromReadinessErr(err error) error {
 }
 
 // brocadeReadiness is the LocalReadinessChecker for agentevidence. It uses the
-// wizard-owned targets.json + runtime sidecar as the single source of truth.
+// wizard-owned targets.json + runtime sidecar as the single source of truth
+// AND verifies the local artifact directory is writable BEFORE any SSH work
+// happens — a snapshot we cannot persist should never be collected.
 type brocadeReadiness struct {
 	targetsDir      string
 	runtimeStateDir string
+	artifactDir     string
 	lanOnly         func() bool
 }
 
@@ -110,6 +113,18 @@ func (r *brocadeReadiness) Check(targetProfileID string) error {
 	if gateErr := targetconfigure.ReadinessGateError(readiness); gateErr != nil {
 		return codedFromReadinessErr(gateErr)
 	}
+	if r.artifactDir != "" {
+		if werr := brocadeexport.VerifyWritableDirectory(r.artifactDir); werr != nil {
+			// Log the full local reason for operators; return a bounded
+			// public sentence that never leaks the OS error.
+			audit.Warn("agent_evidence.artifact_dir_unwritable",
+				"Agent evidence artifact directory is not writable",
+				F("path", r.artifactDir),
+				F("error", werr.Error()))
+			return newCodedErr(brocadeexport.ArtifactDirNotWritableCode,
+				"connector cannot write its evidence artifact directory; recreate the container so /etc/filterrex is mounted read-write")
+		}
+	}
 	return nil
 }
 
@@ -117,6 +132,7 @@ func (r *brocadeReadiness) Check(targetProfileID string) error {
 type brocadeProducer struct {
 	targetsDir      string
 	runtimeStateDir string
+	artifactDir     string
 }
 
 func (p *brocadeProducer) Produce(ctx context.Context, targetProfileID string) (string, string, error) {
@@ -131,10 +147,12 @@ func (p *brocadeProducer) Produce(ctx context.Context, targetProfileID string) (
 
 	// Assemble a single-target, ephemeral export config from the resolved
 	// projection. The wizard/probe path is authoritative; this config only
-	// carries the artifact paths the SSH runner needs.
+	// carries the artifact paths the SSH runner needs. ArtifactDir is
+	// explicitly the daemon-resolved location — not the local CLI default —
+	// so the container's read-only /var/lib is never touched.
 	scoped := brocadeexport.ExportConfig{
 		Enabled:        true,
-		ArtifactDir:    "", // Validate() will fill via EffectiveArtifactDir
+		ArtifactDir:    p.artifactDir,
 		KnownHostsPath: resolved.KnownHostsPath,
 		SSHPort:        resolved.SSHPort,
 		Targets: []brocadeexport.TargetConfig{{
@@ -154,6 +172,10 @@ func (p *brocadeProducer) Produce(ctx context.Context, targetProfileID string) (
 	if err != nil {
 		msg := err.Error()
 		switch {
+		case errors.Is(err, brocadeexport.ErrArtifactDirNotWritable),
+			strings.Contains(msg, "read-only file system"):
+			return "", "", newCodedErr(brocadeexport.ArtifactDirNotWritableCode,
+				"connector cannot write its evidence artifact directory")
 		case strings.Contains(msg, "known_hosts"):
 			return "", "", newCodedErr("host_key_verification_failed", "host-key verification failed")
 		case strings.Contains(msg, "ssh: handshake failed"),
@@ -277,6 +299,28 @@ func initAgentEvidenceRunner(
 		return
 	}
 
+	// Resolve + probe the artifact directory ONCE at startup. Failures do not
+	// abort startup — the handler still runs so the app can surface the
+	// specific artifact_dir_not_writable code — but every dispatch will
+	// re-probe via the readiness check.
+	artifactDir, artifactSource, resolveErr := brocadeexport.ResolveAgentEvidenceArtifactDir()
+	if resolveErr != nil {
+		audit.Warn("agent_evidence.artifact_dir_unwritable",
+			"Agent evidence artifact directory could not be resolved",
+			F("error", resolveErr.Error()))
+	} else if err := brocadeexport.VerifyWritableDirectory(artifactDir); err != nil {
+		audit.Warn("agent_evidence.artifact_dir_unwritable",
+			"Agent evidence artifact directory is not writable at startup",
+			F("path", artifactDir),
+			F("source", artifactSource),
+			F("error", err.Error()))
+	} else {
+		audit.Info("agent_evidence.artifact_dir_ready",
+			"Agent evidence artifact directory ready",
+			F("path", artifactDir),
+			F("source", artifactSource))
+	}
+
 	client := &agentevidence.Client{
 		BaseURL:      strings.TrimRight(backendURL, "/"),
 		AgentVersion: agentVersion,
@@ -288,10 +332,12 @@ func initAgentEvidenceRunner(
 		Producer: &brocadeProducer{
 			targetsDir:      targetsDir,
 			runtimeStateDir: runtimeStateDir,
+			artifactDir:     artifactDir,
 		},
 		Readiness: &brocadeReadiness{
 			targetsDir:      targetsDir,
 			runtimeStateDir: runtimeStateDir,
+			artifactDir:     artifactDir,
 			lanOnly:         lanOnly,
 		},
 		LANOnly: lanOnly,
@@ -306,7 +352,9 @@ func initAgentEvidenceRunner(
 	audit.Info("agent_evidence.wire",
 		"Agent evidence collection wired",
 		F("targets_dir", targetsDir),
-		F("runtime_state_dir", runtimeStateDir))
+		F("runtime_state_dir", runtimeStateDir),
+		F("artifact_dir", artifactDir),
+		F("artifact_dir_source", artifactSource))
 }
 
 // tickAgentEvidence is called from the existing outbound poll loop. Non-blocking

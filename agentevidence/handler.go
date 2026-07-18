@@ -222,6 +222,10 @@ var PublicErrorCodes = map[string]struct{}{
 	"ssh_key_missing":               {},
 	"ssh_key_unreadable":            {},
 	"known_hosts_missing":           {},
+	// preview.23 — artifact directory writability failure surfaced distinctly
+	// so the UI can point operators at the read-only /var/lib fix without
+	// inspecting nested hints on bundle_generation_failed.
+	"artifact_dir_not_writable":     {},
 }
 
 type codedError interface{ Code() string }

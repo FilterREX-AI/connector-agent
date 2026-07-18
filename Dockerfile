@@ -30,9 +30,14 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # Non-root user + config directory
 # Create dirs BEFORE declaring VOLUME so ownership is baked into the image layer.
 # When Docker initializes an empty named volume it copies this layer's contents/perms.
+# `artifacts/` is the daemon-default agent-evidence artifact directory
+# (see brocadeexport.AgentEvidenceArtifactDir); pre-creating it inside the
+# writable /etc/filterrex volume prevents the read-only-rootfs failure that
+# hit preview.22 dispatches.
 RUN adduser -D -u 1000 filterrex \
- && mkdir -p /etc/filterrex/secrets \
- && chown -R filterrex:filterrex /etc/filterrex
+ && mkdir -p /etc/filterrex/secrets /etc/filterrex/artifacts \
+ && chown -R filterrex:filterrex /etc/filterrex \
+ && chmod 0700 /etc/filterrex/artifacts
 
 VOLUME /etc/filterrex
 
