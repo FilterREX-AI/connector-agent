@@ -19,25 +19,24 @@ import (
 	"github.com/filterrex-ai/connector-agent/targetconfigure"
 )
 
-
-
 // Supervisor manages the lifecycle of all target workers.
 type Supervisor struct {
-	mu            sync.RWMutex
-	store         *Store
-	state         *HostState
-	workers       map[string]*Worker // targetID -> worker
-	adapters      map[string]AdapterFactory
-	backend       *BackendClient
-	policy        RetryPolicy
-	uploadQueue     *UploadQueue         // shared upload queue (nil = inline)
-	localDB         *LocalDB             // hybrid mode local DB (nil = disabled)
-	localAPIURL     string               // LAN URL for local API server
-	localAPIToken   string               // pre-shared token for local API
-	targetConfigDir      string               // dir owned by `target configure` (targets.json), may be RO for the daemon
-	runtimeStateDir      string               // writable dir for the readiness sidecar (preview.18)
-	failedRetryAt   map[string]time.Time // targetID -> next allowed retry time
-	failedRetries   map[string]int       // targetID -> consecutive retry count
+	mu                 sync.RWMutex
+	store              *Store
+	state              *HostState
+	workers            map[string]*Worker // targetID -> worker
+	adapters           map[string]AdapterFactory
+	backend            *BackendClient
+	policy             RetryPolicy
+	uploadQueue        *UploadQueue         // shared upload queue (nil = inline)
+	localDB            *LocalDB             // hybrid mode local DB (nil = disabled)
+	localAPIURL        string               // LAN URL for local API server
+	localAPIToken      string               // pre-shared token for local API
+	targetConfigDir    string               // dir owned by `target configure` (targets.json), may be RO for the daemon
+	targetConfigSource string               // env | canonical | legacy
+	runtimeStateDir    string               // writable dir for the readiness sidecar (preview.18)
+	failedRetryAt      map[string]time.Time // targetID -> next allowed retry time
+	failedRetries      map[string]int       // targetID -> consecutive retry count
 	// probeCapabilityReadyFn returns true when a fully-wired remote SSH
 	// readiness probe handler is available. When nil or false the
 	// `probe_brocade_ssh_readiness_v1` capability is NOT advertised.
@@ -121,6 +120,14 @@ func (s *Supervisor) SetTargetConfigDir(dir string) {
 	s.mu.Unlock()
 }
 
+// SetTargetConfigSource records how the Brocade target directory was resolved.
+// It is diagnostic-only and appears in heartbeat logs.
+func (s *Supervisor) SetTargetConfigSource(source string) {
+	s.mu.Lock()
+	s.targetConfigSource = source
+	s.mu.Unlock()
+}
+
 // SetRuntimeStateDir registers the writable directory that holds the
 // per-target readiness sidecar (preview.18). Distinct from
 // SetTargetConfigDir so the daemon can accept a read-only targets.json
@@ -130,7 +137,6 @@ func (s *Supervisor) SetRuntimeStateDir(dir string) {
 	s.runtimeStateDir = dir
 	s.mu.Unlock()
 }
-
 
 // GetLocalAPIToken returns the local API token.
 func (s *Supervisor) GetLocalAPIToken() string {
@@ -268,7 +274,7 @@ func (s *Supervisor) Reconcile() error {
 				existing.Stop()
 				delete(s.workers, target.TargetID)
 
-			// Calculate next retry backoff: 30s, 60s, capped at 60s
+				// Calculate next retry backoff: 30s, 60s, capped at 60s
 				retryCount := s.failedRetries[target.TargetID] + 1
 				s.failedRetries[target.TargetID] = retryCount
 				backoff := time.Duration(30) * time.Second
@@ -349,17 +355,17 @@ func (s *Supervisor) startWorkerLocked(target *TargetProfile) error {
 
 	// Create and start worker
 	worker := NewWorker(WorkerConfig{
-		Profile:     &profileCopy,
-		Adapter:     adapter,
-		Creds:       creds,
-		Policy:      s.policy,
-		Backend:     s.backend,
-		HostToken:   s.state.Identity.ConnectorToken,
-		UploadQueue: s.uploadQueue,
-		LocalDB:     s.localDB,
+		Profile:       &profileCopy,
+		Adapter:       adapter,
+		Creds:         creds,
+		Policy:        s.policy,
+		Backend:       s.backend,
+		HostToken:     s.state.Identity.ConnectorToken,
+		UploadQueue:   s.uploadQueue,
+		LocalDB:       s.localDB,
 		LocalAPIURL:   s.localAPIURL,
 		LocalAPIToken: s.localAPIToken,
-		LanOnly:     s.state.Config.LanOnly,
+		LanOnly:       s.state.Config.LanOnly,
 		OnStateChange: func(targetID string, status WorkerStatus) {
 			s.onWorkerStateChange(targetID, status)
 		},
@@ -388,7 +394,7 @@ func (s *Supervisor) onWorkerStateChange(targetID string, status WorkerStatus) {
 
 		for i := range s.state.Targets {
 			if s.state.Targets[i].TargetID == targetID {
-			switch status {
+				switch status {
 				case WorkerStatusDegraded:
 					s.state.Targets[i].Status = TargetStatusDegraded
 				case WorkerStatusRunning:
@@ -396,15 +402,15 @@ func (s *Supervisor) onWorkerStateChange(targetID string, status WorkerStatus) {
 					// Clear retry tracking on recovery
 					delete(s.failedRetryAt, targetID)
 					delete(s.failedRetries, targetID)
-			case WorkerStatusStopped:
-				// Graceful system stop — preserve active
-				// status so next Reconcile() restarts the
-				// worker. TargetStatusPaused is reserved for
-				// explicit user-initiated pauses only
-				// (target.Paused == true).
-				if s.state.Targets[i].Status != TargetStatusPaused {
-					s.state.Targets[i].Status = TargetStatusActive
-				}
+				case WorkerStatusStopped:
+					// Graceful system stop — preserve active
+					// status so next Reconcile() restarts the
+					// worker. TargetStatusPaused is reserved for
+					// explicit user-initiated pauses only
+					// (target.Paused == true).
+					if s.state.Targets[i].Status != TargetStatusPaused {
+						s.state.Targets[i].Status = TargetStatusActive
+					}
 				case WorkerStatusFailed:
 					s.state.Targets[i].Status = TargetStatusError
 				}
@@ -749,18 +755,18 @@ func (s *Supervisor) RunLocalReconcile(ctx context.Context) {
 				continue
 			}
 
-		audit.Info("sync.reconciled",
-			"Local reconcile — retrying failed workers (cloud sync may be unavailable)")
-		if err := s.Reconcile(); err != nil {
-			audit.Warn("sync.error", "Local reconcile failed", Err(err))
-		} else {
-			// After reconcile, broadcast current
-			// worker status. If cloud is available
-			// this updates the DB immediately.
-			// If not, the reconnect callback will
-			// fire the broadcast when it recovers.
-			s.BroadcastHeartbeat()
-		}
+			audit.Info("sync.reconciled",
+				"Local reconcile — retrying failed workers (cloud sync may be unavailable)")
+			if err := s.Reconcile(); err != nil {
+				audit.Warn("sync.error", "Local reconcile failed", Err(err))
+			} else {
+				// After reconcile, broadcast current
+				// worker status. If cloud is available
+				// this updates the DB immediately.
+				// If not, the reconnect callback will
+				// fire the broadcast when it recovers.
+				s.BroadcastHeartbeat()
+			}
 		}
 	}
 }
@@ -992,7 +998,6 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 		lanOnly = true
 	}
 
-
 	// Binary capabilities compiled into this build. Add new entries here
 	// once their agent-side implementation ships; DO NOT gate this list on
 	// local readiness — that's what CapabilityStatus reports.
@@ -1007,7 +1012,6 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 	if s.probeCapabilityReadyFn != nil && s.probeCapabilityReadyFn() && !lanOnly {
 		binaryCaps = append(binaryCaps, CapabilityProbeBrocadeSshReadinessV1)
 	}
-
 
 	brocade := evaluateBrocadeCapabilityStatus(lanOnly)
 	if lanOnly {
@@ -1046,15 +1050,15 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 			for _, w := range warns {
 				fmt.Printf("[supervisor] warn: %s\n", w.String())
 			}
-			_, statErr := os.Stat(filepath.Join(s.targetConfigDir, "targets.json"))
+			inv := targetconfigure.InspectTargetConfigDir(s.targetConfigDir)
 			runtimePresent := false
 			if s.runtimeStateDir != "" {
 				if _, rerr := os.Stat(filepath.Join(s.runtimeStateDir, "brocade-ssh-readiness.json")); rerr == nil {
 					runtimePresent = true
 				}
 			}
-			fmt.Printf("[supervisor] brocade ssh snapshot: targets_dir=%s targets_present=%t runtime_dir=%s runtime_present=%t published=%d warnings=%d\n",
-				s.targetConfigDir, statErr == nil, s.runtimeStateDir, runtimePresent, len(sshSnap), len(warns))
+			fmt.Printf("[supervisor] brocade ssh snapshot: source=%s targets_dir=%s targets_present=%t targets_readable=%t records_loaded=%d runtime_dir=%s runtime_present=%t published=%d warnings=%d\n",
+				s.targetConfigSource, inv.Dir, inv.FilePresent, inv.FileReadable, inv.RecordsLoaded, s.runtimeStateDir, runtimePresent, len(sshSnap), len(warns))
 		} else {
 			fmt.Printf("[supervisor] brocade ssh snapshot: targets_dir=<unset> targets_present=false runtime_dir=%s runtime_present=false published=0 warnings=0\n", s.runtimeStateDir)
 		}
@@ -1073,4 +1077,3 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 		CapabilityStatus:  capStatus,
 	}
 }
-

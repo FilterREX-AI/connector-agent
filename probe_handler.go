@@ -109,6 +109,10 @@ func (rh *RelayHandler) executeProbeSSHReadiness(cmd RelayCommand, start time.Ti
 		switch {
 		case errors.Is(err, targetconfigure.ErrTargetNotConfigured):
 			code = "target_not_configured"
+		case errors.Is(err, targetconfigure.ErrTargetConfigMissing):
+			code = targetconfigure.TargetConfigMissing
+		case errors.Is(err, targetconfigure.ErrTargetConfigUnreadable):
+			code = targetconfigure.TargetConfigUnreadable
 		case errors.Is(err, targetconfigure.ErrDuplicateTargetID):
 			code = "duplicate_target_id"
 		case errors.Is(err, targetconfigure.ErrInvalidTargetID):
@@ -122,10 +126,16 @@ func (rh *RelayHandler) executeProbeSSHReadiness(cmd RelayCommand, start time.Ti
 		case errors.Is(err, targetconfigure.ErrConfigDirRequired):
 			code = "probe_handler_not_configured"
 		}
+		inv := targetconfigure.InspectTargetConfigDir(rh.probeConfigDir)
 		audit.Warn("probe.ssh.failed",
 			"Remote SSH readiness probe failed",
 			F("cmd_id", cmd.ID), F("target_profile_id", cmd.TargetProfileID),
-			F("code", code), F("error", err.Error()))
+			F("code", code), F("error", err.Error()),
+			F("targets_dir", inv.Dir), F("targets_file", inv.File),
+			F("directory_present", inv.DirectoryPresent),
+			F("targets_present", inv.FilePresent),
+			F("targets_readable", inv.FileReadable),
+			F("records_loaded", inv.RecordsLoaded))
 		return RelayResult{
 			ID:             cmd.ID,
 			ResponseStatus: 200,

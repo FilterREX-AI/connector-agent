@@ -45,10 +45,12 @@ type ProbeOutcome struct {
 // outside this set indicates a genuine infrastructure failure and should
 // surface as `probe_execution_failed`.
 var (
-	ErrTargetNotConfigured = errors.New("target_not_configured")
-	ErrDuplicateTargetID   = errors.New("duplicate_target_id")
-	ErrProbeLockFailed     = errors.New("probe_lock_failed")
-	ErrConfigDirRequired   = errors.New("config_dir_required")
+	ErrTargetNotConfigured    = errors.New("target_not_configured")
+	ErrTargetConfigMissing    = errors.New(TargetConfigMissing)
+	ErrTargetConfigUnreadable = errors.New(TargetConfigUnreadable)
+	ErrDuplicateTargetID      = errors.New("duplicate_target_id")
+	ErrProbeLockFailed        = errors.New("probe_lock_failed")
+	ErrConfigDirRequired      = errors.New("config_dir_required")
 )
 
 const lockFileName = ".targets.lock"
@@ -115,6 +117,14 @@ func runProbeForTargetImpl(ctx context.Context, targetsDir, runtimeStateDir, tar
 	}
 
 	useSidecar := strings.TrimSpace(runtimeStateDir) != ""
+
+	inv := InspectTargetConfigDir(targetsDir)
+	if !inv.FilePresent {
+		return ProbeOutcome{}, ErrTargetConfigMissing
+	}
+	if !inv.FileReadable || inv.Status == TargetConfigUnreadable {
+		return ProbeOutcome{}, ErrTargetConfigUnreadable
+	}
 
 	// Legacy path locks the targets dir. Sidecar path reads targets.json
 	// without a lock (writes there are atomic renames).

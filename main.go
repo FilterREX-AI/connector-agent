@@ -33,6 +33,8 @@ import (
 	"github.com/filterrex-ai/connector-agent/targetconfigure"
 )
 
+const canonicalBrocadeTargetsDir = "/etc/filterrex/targets"
+
 // displayVersion returns the human-facing version string. HostVersion is
 // injected by the build via -ldflags; CI historically passes the git tag
 // (e.g. "v0.1.0-preview.3"), but a plain "0.1.0-preview.3" is also valid.
@@ -49,16 +51,53 @@ func displayVersion() string {
 	return "v" + v
 }
 
-// resolveBrocadeTargetsDir returns the directory the daemon should read
-// targets.json from. Precedence: FILTERREX_BROCADE_TARGETS_DIR env override,
-// then <configDir>/targets. Whitespace-only env values are treated as unset.
-// Kept as a pure function so preview.17's fix has a regression test that
-// does not depend on process env or the filesystem.
+type BrocadeTargetsResolution struct {
+	Dir      string
+	File     string
+	Source   string
+	Warning  string
+	Present  bool
+	Readable bool
+}
+
 func resolveBrocadeTargetsDir(envOverride, configDir string) string {
-	if v := strings.TrimSpace(envOverride); v != "" {
-		return v
+	return resolveBrocadeTargets(envOverride, configDir).Dir
+}
+
+func resolveBrocadeTargets(envOverride, configDir string) BrocadeTargetsResolution {
+	return resolveBrocadeTargetsWithCanonical(envOverride, configDir, canonicalBrocadeTargetsDir)
+}
+
+func resolveBrocadeTargetsWithCanonical(envOverride, configDir, canonicalDir string) BrocadeTargetsResolution {
+	env := strings.TrimSpace(envOverride)
+	if env != "" {
+		return inspectBrocadeTargetsCandidate(env, "env", "")
 	}
-	return filepath.Join(configDir, "targets")
+	canonical := inspectBrocadeTargetsCandidate(canonicalDir, "canonical", "")
+	legacyDir := filepath.Join(configDir, "targets")
+	legacy := inspectBrocadeTargetsCandidate(legacyDir, "legacy", "legacy_targets_dir")
+	if canonical.Readable {
+		if legacy.Readable && legacy.Dir != canonical.Dir {
+			canonical.Warning = "multiple_target_config_sources"
+		}
+		return canonical
+	}
+	if legacy.Readable {
+		return legacy
+	}
+	return canonical
+}
+
+func inspectBrocadeTargetsCandidate(dir, source, warning string) BrocadeTargetsResolution {
+	inv := targetconfigure.InspectTargetConfigDir(dir)
+	return BrocadeTargetsResolution{
+		Dir:      inv.Dir,
+		File:     inv.File,
+		Source:   source,
+		Warning:  warning,
+		Present:  inv.FilePresent,
+		Readable: inv.FileReadable,
+	}
 }
 
 // targetConfigureRunner matches targetconfigure.Run so main dispatch can be
@@ -123,7 +162,6 @@ func main() {
 		return
 	}
 
-
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
 
 	// Initialize audit logger early — use env LOG_LEVEL or default "info"
@@ -161,20 +199,29 @@ func main() {
 	// readiness and every "Collect from agent" request will fail the
 	// server-side readiness gate with `ssh_not_ready`. Preview.16 and
 	// earlier had this mismatch; preview.17 resolves it here.
-	brocadeTargetsDir := resolveBrocadeTargetsDir(os.Getenv("FILTERREX_BROCADE_TARGETS_DIR"), configDir)
+	brocadeTargetsResolution := resolveBrocadeTargets(os.Getenv("FILTERREX_BROCADE_TARGETS_DIR"), configDir)
+	brocadeTargetsDir := brocadeTargetsResolution.Dir
 	audit.Info("host.startup", "Brocade targets directory resolved",
-		F("path", brocadeTargetsDir))
-	if _, err := os.Stat(filepath.Join(brocadeTargetsDir, "targets.json")); err != nil {
-		if os.IsNotExist(err) {
-			audit.Warn("host.startup",
-				"Brocade targets.json not found — SSH readiness will be empty until `target configure` is run",
-				F("path", filepath.Join(brocadeTargetsDir, "targets.json")))
-		} else {
-			audit.Warn("host.startup",
-				"Brocade targets.json stat failed",
-				F("path", filepath.Join(brocadeTargetsDir, "targets.json")),
-				F("error", err.Error()))
-		}
+		F("source", brocadeTargetsResolution.Source),
+		F("path", brocadeTargetsResolution.Dir),
+		F("file", brocadeTargetsResolution.File),
+		F("targets_present", brocadeTargetsResolution.Present),
+		F("targets_readable", brocadeTargetsResolution.Readable))
+	if brocadeTargetsResolution.Warning != "" {
+		audit.Warn("host.startup", "Brocade target configuration resolution warning",
+			F("reason", brocadeTargetsResolution.Warning),
+			F("selected", brocadeTargetsResolution.Dir))
+	}
+	if !brocadeTargetsResolution.Present {
+		audit.Warn("host.startup",
+			"Brocade targets.json not found — SSH readiness will be empty until the secure directory is mounted and target configure is run",
+			F("path", brocadeTargetsResolution.File),
+			F("source", brocadeTargetsResolution.Source))
+	} else if !brocadeTargetsResolution.Readable {
+		audit.Warn("host.startup",
+			"Brocade targets.json is present but not readable — SSH readiness cannot be published",
+			F("path", brocadeTargetsResolution.File),
+			F("source", brocadeTargetsResolution.Source))
 	}
 
 	// Preview.18: mutable readiness sidecar lives on a WRITABLE path,
@@ -280,9 +327,8 @@ func main() {
 	// This is /etc/filterrex/targets by default (bind-mounted from the
 	// host's /opt/filterrex/secure) — NOT the top-level configDir.
 	supervisor.SetTargetConfigDir(brocadeTargetsDir)
+	supervisor.SetTargetConfigSource(brocadeTargetsResolution.Source)
 	supervisor.SetRuntimeStateDir(brocadeRuntimeStateDir)
-
-
 
 	// Register available adapters — built-in only, no dynamic plugins.
 	// The concrete set is build-tagged: adapters_full.go (default) registers
@@ -520,7 +566,6 @@ func main() {
 		audit.Info("host.config_loaded", "Enroll the host to enable remote management")
 	}
 
-
 	// ── Update Manager ──
 	var updateManager *UpdateManager
 	updateMgr, err := NewUpdateManager(store, backend, supervisor, configDir)
@@ -649,11 +694,11 @@ func detectLegacyEnvConfig() *Config {
 	}
 
 	c := &Config{
-		ConnectorToken:      token,
-		BackendURL:          os.Getenv("BACKEND_URL"),
-		TargetType:          targetType,
-		ProxmoxBaseURL:      strings.TrimRight(os.Getenv("PROXMOX_BASE_URL"), "/"),
-		ProxmoxUsername:     os.Getenv("PROXMOX_USERNAME"),
+		ConnectorToken:     token,
+		BackendURL:         os.Getenv("BACKEND_URL"),
+		TargetType:         targetType,
+		ProxmoxBaseURL:     strings.TrimRight(os.Getenv("PROXMOX_BASE_URL"), "/"),
+		ProxmoxUsername:    os.Getenv("PROXMOX_USERNAME"),
 		ProxmoxPassword:    os.Getenv("PROXMOX_PASSWORD"),
 		ProxmoxTokenID:     os.Getenv("PROXMOX_TOKEN_ID"),
 		ProxmoxTokenSecret: os.Getenv("PROXMOX_TOKEN_SECRET"),
