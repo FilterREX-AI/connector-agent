@@ -1013,7 +1013,7 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 		binaryCaps = append(binaryCaps, CapabilityProbeBrocadeSshReadinessV1)
 	}
 
-	brocade := evaluateBrocadeCapabilityStatus(lanOnly)
+	brocade := evaluateBrocadeCapabilityStatus(s.targetConfigDir, s.runtimeStateDir, lanOnly)
 	if lanOnly {
 		// LAN-only mode: explicitly publish false so any prior true readiness
 		// in the persisted status is overwritten by this heartbeat rather than

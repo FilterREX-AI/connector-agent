@@ -200,17 +200,28 @@ func (h *Handler) audit(event string, fields map[string]any) {
 
 // PublicErrorCodes accepted by agent-evidence-fail.
 var PublicErrorCodes = map[string]struct{}{
-	"credential_profile_missing": {},
-	"ssh_auth_failed":            {},
-	"host_key_failed":            {},
-	"command_profile_failed":     {},
-	"bundle_generation_failed":   {},
-	"upload_url_expired":         {},
-	"upload_failed":              {},
-	"capability_disabled":        {},
-	"lan_only_mode":              {},
-	"target_not_found":           {},
-	"cancelled":                  {},
+	"credential_profile_missing":    {},
+	"ssh_auth_failed":               {},
+	"host_key_failed":               {},
+	"host_key_verification_failed":  {},
+	"command_profile_failed":        {},
+	"bundle_generation_failed":      {},
+	"upload_url_expired":            {},
+	"upload_failed":                 {},
+	"capability_disabled":           {},
+	"lan_only_mode":                 {},
+	"target_not_found":              {},
+	"cancelled":                     {},
+	// preview.22 — unified targets.json readiness vocabulary.
+	"target_configuration_missing":  {},
+	"target_configuration_invalid":  {},
+	"target_not_configured":         {},
+	"ssh_setup_pending":             {},
+	"ssh_probe_stale":               {},
+	"ssh_not_ready":                 {},
+	"ssh_key_missing":               {},
+	"ssh_key_unreadable":            {},
+	"known_hosts_missing":           {},
 }
 
 type codedError interface{ Code() string }

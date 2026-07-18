@@ -547,6 +547,8 @@ func main() {
 				}
 				return false
 			},
+			brocadeTargetsDir,
+			brocadeRuntimeStateDir,
 		)
 
 	} else {

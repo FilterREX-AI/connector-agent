@@ -1,28 +1,24 @@
-// FilterREX Connector Host — Agent Evidence collection wiring.
+// FilterREX Connector Host — Agent Evidence collection wiring (preview.22).
 //
-// Bridges the `agentevidence` handler to concrete host resources:
-//   - Loads the local Brocade export config from disk.
-//   - Reports which capabilities the BINARY supports and which
-//     TARGET PROFILES are locally configured (separated so the
-//     dispatch RPC can distinguish agent_update_required from
-//     agent_configuration_required).
-//   - Runs a single-target read-only Brocade collection when a
-//     dispatched job is claimed.
-//   - Emits the stage-specific audit events
-//     agent_evidence.poll / .claimed / .readiness_failed /
-//     .bundle_produced / .uploaded / .completed / .failed
-//     (see agentevidence.Handler).
+// Bridges the `agentevidence` handler to concrete host resources by consuming
+// the SAME targets.json + runtime-readiness sidecar the wizard writes and the
+// heartbeat/probe path reads. There is no longer a second /etc/filterrex/
+// brocade-export.json config; if the operator has proven SSH via the wizard
+// or `target probe`, agent-evidence collection is ready by construction.
 //
-// Runs from the existing outbound relay poll — no second polling
-// goroutine. See supervisor.RegisterAgentEvidenceHook.
+// Emits the stage-specific audit events
+//   agent_evidence.poll / .claimed / .readiness_failed /
+//   .bundle_produced / .uploaded / .completed / .failed
+// (see agentevidence.Handler).
+//
+// Runs from the existing outbound relay poll — no second polling goroutine.
 
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +26,8 @@ import (
 	"github.com/filterrex-ai/connector-agent/agentevidence"
 	"github.com/filterrex-ai/connector-agent/brocadeexport"
 	"github.com/filterrex-ai/connector-agent/evidencebundle"
+	"github.com/filterrex-ai/connector-agent/targetconfigure"
 )
-
 
 // CapabilityCollectBrocadeEvidenceBundleV1 is the binary-capability string
 // this build advertises to the control plane. Never rename without matching
@@ -39,24 +35,8 @@ import (
 const CapabilityCollectBrocadeEvidenceBundleV1 = "collect_brocade_evidence_bundle_v1"
 
 // CapabilityProbeBrocadeSshReadinessV1 advertises that this build participates
-// in remote-triggered SSH readiness probes for Brocade targets. The app gates
-// the "Test from agent now" affordance on this capability appearing in the
-// heartbeat manifest; advertising it here does not by itself execute a probe
-// (that wiring lands in a later release). Must match the string checked in
-// src/config/connectorCapabilities.ts.
+// in remote-triggered SSH readiness probes for Brocade targets.
 const CapabilityProbeBrocadeSshReadinessV1 = "probe_brocade_ssh_readiness_v1"
-
-// defaultBrocadeExportConfigPath is the operator-facing convention. It can be
-// overridden via FILTERREX_BROCADE_EXPORT_CONFIG for advanced installs.
-const defaultBrocadeExportConfigPath = "/etc/filterrex/brocade-export.json"
-
-// brocadeExportConfigPath returns the operator-facing config location.
-func brocadeExportConfigPath() string {
-	if p := strings.TrimSpace(os.Getenv("FILTERREX_BROCADE_EXPORT_CONFIG")); p != "" {
-		return p
-	}
-	return defaultBrocadeExportConfigPath
-}
 
 // codedError wraps a public error code for agentevidence.Handler.
 type codedErr struct {
@@ -69,75 +49,109 @@ func (e *codedErr) Code() string  { return e.code }
 
 func newCodedErr(code, msg string) error { return &codedErr{code: code, msg: msg} }
 
-// brocadeReadiness is the LocalReadinessChecker for agentevidence.
+// codedFromReadinessErr maps a targetconfigure loader sentinel to a public
+// error code from the fixed allowlist in agentevidence/handler.go.
+func codedFromReadinessErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, targetconfigure.ErrTargetConfigMissing):
+		return newCodedErr("target_configuration_missing",
+			"connector has no targets.json — run `target configure`")
+	case errors.Is(err, targetconfigure.ErrTargetConfigUnreadable):
+		return newCodedErr("target_configuration_invalid",
+			"connector cannot read targets.json")
+	case errors.Is(err, targetconfigure.ErrTargetNotConfigured):
+		return newCodedErr("target_not_configured",
+			"no local target maps to this target_profile_id")
+	case errors.Is(err, targetconfigure.ErrDuplicateTargetID):
+		return newCodedErr("target_not_configured",
+			"multiple local targets share this target_profile_id")
+	case errors.Is(err, targetconfigure.ErrInvalidTargetID):
+		return newCodedErr("target_configuration_invalid",
+			"target_profile_id is not a valid UUID")
+	case errors.Is(err, targetconfigure.ErrSSHSetupPending):
+		return newCodedErr("ssh_setup_pending",
+			"SSH has never been proven for this target — run `target probe`")
+	case errors.Is(err, targetconfigure.ErrSSHProbeStale):
+		return newCodedErr("ssh_probe_stale",
+			"last successful SSH probe is older than the freshness window")
+	case errors.Is(err, targetconfigure.ErrSSHNotReady):
+		return newCodedErr("ssh_not_ready",
+			"connector has not reported fresh SSH readiness for this target")
+	}
+	// Bounded fall-back — never leak arbitrary text.
+	msg := err.Error()
+	switch msg {
+	case "ssh_key_missing", "ssh_key_unreadable", "known_hosts_missing":
+		return newCodedErr(msg, msg)
+	}
+	return newCodedErr("target_configuration_invalid", msg)
+}
+
+// brocadeReadiness is the LocalReadinessChecker for agentevidence. It uses the
+// wizard-owned targets.json + runtime sidecar as the single source of truth.
 type brocadeReadiness struct {
-	configPath string
+	targetsDir      string
+	runtimeStateDir string
+	lanOnly         func() bool
 }
 
 func (r *brocadeReadiness) Check(targetProfileID string) error {
-	if _, statErr := os.Stat(r.configPath); os.IsNotExist(statErr) {
-		return newCodedErr("credential_profile_missing",
-			fmt.Sprintf("local Brocade export config not present at %s", r.configPath))
+	if r.lanOnly != nil && r.lanOnly() {
+		return newCodedErr("lan_only_mode",
+			"connector is in LAN-only mode; server-initiated collection refused")
 	}
-	cfg, err := brocadeexport.LoadConfig(r.configPath)
+	_, readiness, err := targetconfigure.LoadResolvedBrocadeTarget(
+		r.targetsDir, r.runtimeStateDir, targetProfileID)
 	if err != nil {
-		return newCodedErr("configuration_invalid", "invalid brocade-export config")
+		return codedFromReadinessErr(err)
 	}
-
-	if !cfg.Enabled {
-		return newCodedErr("capability_disabled",
-			"brocade_bundle_export capability is disabled in local config")
-	}
-	// Known-hosts must exist for host-key verification.
-	kh := strings.TrimSpace(cfg.KnownHostsPath)
-	if kh == "" {
-		return newCodedErr("known_hosts_missing", "known_hosts_path is required in local config")
-	}
-	if _, err := os.Stat(kh); err != nil {
-		return newCodedErr("known_hosts_missing",
-			fmt.Sprintf("known_hosts not readable at %s", kh))
-	}
-	// Find the matching target.
-	tgt, ok := findTargetByProfileID(cfg, targetProfileID)
-	if !ok {
-		return newCodedErr("target_mapping_missing",
-			"no local Brocade target maps to this target_profile_id")
-	}
-	if _, err := os.Stat(tgt.SSHKeyPath); err != nil {
-		if os.IsNotExist(err) {
-			return newCodedErr("ssh_key_missing", "ssh key file not found")
-		}
-		return newCodedErr("ssh_key_unreadable", "ssh key file not readable")
+	if gateErr := targetconfigure.ReadinessGateError(readiness); gateErr != nil {
+		return codedFromReadinessErr(gateErr)
 	}
 	return nil
 }
 
 // brocadeProducer is the BundleProducer for agentevidence.
 type brocadeProducer struct {
-	configPath string
+	targetsDir      string
+	runtimeStateDir string
 }
 
 func (p *brocadeProducer) Produce(ctx context.Context, targetProfileID string) (string, string, error) {
-	cfg, err := brocadeexport.LoadConfig(p.configPath)
+	resolved, readiness, err := targetconfigure.LoadResolvedBrocadeTarget(
+		p.targetsDir, p.runtimeStateDir, targetProfileID)
 	if err != nil {
-		return "", "", newCodedErr("configuration_invalid", err.Error())
+		return "", "", codedFromReadinessErr(err)
 	}
-	// Narrow to the single target the dispatched job asked for.
-	tgt, ok := findTargetByProfileID(cfg, targetProfileID)
-	if !ok {
-		return "", "", newCodedErr("target_mapping_missing", "no local target for this profile")
+	if gateErr := targetconfigure.ReadinessGateError(readiness); gateErr != nil {
+		return "", "", codedFromReadinessErr(gateErr)
 	}
-	scoped := *cfg
-	scoped.Targets = []brocadeexport.TargetConfig{tgt}
+
+	// Assemble a single-target, ephemeral export config from the resolved
+	// projection. The wizard/probe path is authoritative; this config only
+	// carries the artifact paths the SSH runner needs.
+	scoped := brocadeexport.ExportConfig{
+		Enabled:        true,
+		ArtifactDir:    "", // Validate() will fill via EffectiveArtifactDir
+		KnownHostsPath: resolved.KnownHostsPath,
+		SSHPort:        resolved.SSHPort,
+		Targets: []brocadeexport.TargetConfig{{
+			SwitchName: nonEmpty(resolved.ProfileName, resolved.TargetID),
+			Host:       resolved.Host,
+			Username:   resolved.SSHUsername,
+			SSHKeyPath: resolved.PrivateKeyPath,
+		}},
+	}
 
 	req := brocadeexport.RequestMeta{
 		RequesterType: "agent_evidence",
 		Requester:     "agent-evidence-dispatch",
-		ConfigPath:    p.configPath,
+		ConfigPath:    "", // no on-disk config used; runtime-materialized
 	}
 	res, err := brocadeexport.RunExportWithSSH(ctx, &scoped, req)
 	if err != nil {
-		// Map the small set we can classify; everything else is generic.
 		msg := err.Error()
 		switch {
 		case strings.Contains(msg, "known_hosts"):
@@ -152,22 +166,20 @@ func (p *brocadeProducer) Produce(ctx context.Context, targetProfileID string) (
 	return res.Path, evidencebundle.ProfileVersion(), nil
 }
 
-// findTargetByProfileID returns the first target whose TargetProfileID matches.
-func findTargetByProfileID(cfg *brocadeexport.ExportConfig, id string) (brocadeexport.TargetConfig, bool) {
-	for _, t := range cfg.Targets {
-		if strings.EqualFold(strings.TrimSpace(t.TargetProfileID), strings.TrimSpace(id)) {
-			return t, true
-		}
+func nonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
 	}
-	return brocadeexport.TargetConfig{}, false
+	return b
 }
 
-// evaluateBrocadeCapabilityStatus inspects the local Brocade export config and
-// produces the per-capability readiness struct reported in heartbeats.
+// evaluateBrocadeCapabilityStatus derives per-capability readiness from the
+// wizard-owned targets.json + runtime-state sidecar — the same source the
+// heartbeat SSH-readiness merge already consumes.
 //
 // It NEVER opens key material or attempts SSH; it only stats files and reads
 // the config, so it is safe to call on every capability-manifest build.
-func evaluateBrocadeCapabilityStatus(lanOnly bool) CapabilityStatusInfo {
+func evaluateBrocadeCapabilityStatus(targetsDir, runtimeStateDir string, lanOnly bool) CapabilityStatusInfo {
 	if lanOnly {
 		return CapabilityStatusInfo{
 			Enabled:            false,
@@ -175,58 +187,28 @@ func evaluateBrocadeCapabilityStatus(lanOnly bool) CapabilityStatusInfo {
 			Reason:             "LAN-only mode refuses server-initiated collection",
 		}
 	}
-	path := brocadeExportConfigPath()
-	if _, err := os.Stat(path); err != nil {
+	inv := targetconfigure.InspectTargetConfigDir(targetsDir)
+	if !inv.FileReadable {
 		return CapabilityStatusInfo{
 			Enabled:            false,
 			ConfigurationState: "not_configured",
-			Reason:             fmt.Sprintf("no config at %s", path),
+			Reason: fmt.Sprintf("no targets.json at %s — run `target configure` on the connector host",
+				inv.File),
 		}
 	}
-	cfg, err := brocadeexport.LoadConfig(path)
-	if err != nil {
+	if !inv.ParseSuccessful {
 		return CapabilityStatusInfo{
 			Enabled:            false,
 			ConfigurationState: "invalid",
-			Reason:             "config parse failed",
+			Reason:             "targets.json failed to parse",
 		}
 	}
-	if !cfg.Enabled {
-		return CapabilityStatusInfo{
-			Enabled:            false,
-			ConfigurationState: "not_configured",
-			Reason:             "brocade_bundle_export is false in local config",
-		}
-	}
-	if strings.TrimSpace(cfg.KnownHostsPath) == "" {
-		return CapabilityStatusInfo{
-			Enabled:            false,
-			ConfigurationState: "invalid",
-			Reason:             "known_hosts_path is required",
-		}
-	}
-	if _, err := os.Stat(cfg.KnownHostsPath); err != nil {
-		return CapabilityStatusInfo{
-			Enabled:            false,
-			ConfigurationState: "invalid",
-			Reason:             "known_hosts file not readable",
-		}
-	}
-	ready := make([]string, 0, len(cfg.Targets))
-	for _, t := range cfg.Targets {
-		if strings.TrimSpace(t.TargetProfileID) == "" {
-			continue
-		}
-		if _, err := os.Stat(t.SSHKeyPath); err != nil {
-			continue
-		}
-		ready = append(ready, t.TargetProfileID)
-	}
+	ready := collectReadyBrocadeTargetIDs(targetsDir, runtimeStateDir)
 	if len(ready) == 0 {
 		return CapabilityStatusInfo{
 			Enabled:            true,
 			ConfigurationState: "not_configured",
-			Reason:             "no target_profile_id has a readable SSH key on this host",
+			Reason:             "no Brocade target has a fresh successful SSH probe on this host",
 		}
 	}
 	return CapabilityStatusInfo{
@@ -234,6 +216,36 @@ func evaluateBrocadeCapabilityStatus(lanOnly bool) CapabilityStatusInfo {
 		ConfigurationState:    "ready",
 		ReadyTargetProfileIDs: ready,
 	}
+}
+
+// collectReadyBrocadeTargetIDs enumerates target UUIDs whose merged readiness
+// (record + runtime sidecar) is Ready + Fresh. Used by the manifest to make
+// the capability's ReadyTargetProfileIDs the same set the collection path
+// will actually accept.
+func collectReadyBrocadeTargetIDs(targetsDir, runtimeStateDir string) []string {
+	snap, _, err := targetconfigure.LoadSSHReadinessSnapshotWithRuntime(targetsDir, runtimeStateDir)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(snap))
+	now := time.Now().UTC()
+	for id, r := range snap {
+		if !r.SSHReady {
+			continue
+		}
+		if strings.TrimSpace(r.LastSuccessfulProbeAt) == "" {
+			continue
+		}
+		t, terr := time.Parse(time.RFC3339, r.LastSuccessfulProbeAt)
+		if terr != nil {
+			continue
+		}
+		if now.Sub(t.UTC()) > targetconfigure.ReadinessFreshWindow {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
 }
 
 // ── Handler runner (invoked from the existing outbound poll) ───────
@@ -251,46 +263,54 @@ var agentEvidence agentEvidenceRunner
 
 // initAgentEvidenceRunner wires up the handler with the concrete producer,
 // readiness checker, and audit sink. Called once during startup from main.go.
-func initAgentEvidenceRunner(backendURL string, connectorToken func() string, agentVersion string, lanOnly func() bool) {
+func initAgentEvidenceRunner(
+	backendURL string,
+	connectorToken func() string,
+	agentVersion string,
+	lanOnly func() bool,
+	targetsDir string,
+	runtimeStateDir string,
+) {
 	agentEvidence.mu.Lock()
 	defer agentEvidence.mu.Unlock()
 	if agentEvidence.handler != nil {
 		return
 	}
-	cfgPath := brocadeExportConfigPath()
 
 	client := &agentevidence.Client{
 		BaseURL:      strings.TrimRight(backendURL, "/"),
 		AgentVersion: agentVersion,
 	}
-	// The token is injected per-request via a closure so token rotation
-	// (re-enrollment / --force-reset-state) is picked up automatically.
 	client.TokenProvider = connectorToken
 
 	agentEvidence.handler = &agentevidence.Handler{
-		Client:    client,
-		Producer:  &brocadeProducer{configPath: cfgPath},
-		Readiness: &brocadeReadiness{configPath: cfgPath},
-		LANOnly:   lanOnly,
+		Client: client,
+		Producer: &brocadeProducer{
+			targetsDir:      targetsDir,
+			runtimeStateDir: runtimeStateDir,
+		},
+		Readiness: &brocadeReadiness{
+			targetsDir:      targetsDir,
+			runtimeStateDir: runtimeStateDir,
+			lanOnly:         lanOnly,
+		},
+		LANOnly: lanOnly,
 		AuditLog: func(event string, fields map[string]any) {
-			// Every audit line goes through the structured logger. Event
-			// names originate in the handler (agent_evidence.*).
 			afields := make([]Field, 0, len(fields))
 			for k, v := range fields {
 				afields = append(afields, F(k, v))
 			}
 			audit.Info(event, event, afields...)
 		},
-
 	}
 	audit.Info("agent_evidence.wire",
 		"Agent evidence collection wired",
-		F("config_path", cfgPath))
+		F("targets_dir", targetsDir),
+		F("runtime_state_dir", runtimeStateDir))
 }
 
-// tickAgentEvidence is called from the existing outbound poll loop. It is a
-// non-blocking, single-flight tick: if a bundle is currently being produced,
-// we skip so the poll cadence never queues up SSH work.
+// tickAgentEvidence is called from the existing outbound poll loop. Non-blocking
+// and single-flight.
 func tickAgentEvidence(ctx context.Context) {
 	agentEvidence.mu.Lock()
 	if agentEvidence.handler == nil {
@@ -301,8 +321,6 @@ func tickAgentEvidence(ctx context.Context) {
 		agentEvidence.mu.Unlock()
 		return
 	}
-	// Throttle the debug-level poll marker to at most once per 5 minutes so
-	// a healthy idle agent doesn't spam the log every 3 seconds.
 	if time.Since(agentEvidence.lastPoll) > 5*time.Minute {
 		agentEvidence.lastPoll = time.Now()
 		audit.Debug("agent_evidence.poll", "Polling for evidence collection jobs")
@@ -317,8 +335,6 @@ func tickAgentEvidence(ctx context.Context) {
 			agentEvidence.inFlight = false
 			agentEvidence.mu.Unlock()
 		}()
-		// Bound this claim/produce/upload cycle so it can't outlive the
-		// supervisor's shutdown context.
 		rctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		defer cancel()
 		if _, err := h.Run(rctx); err != nil {
@@ -328,5 +344,3 @@ func tickAgentEvidence(ctx context.Context) {
 		}
 	}()
 }
-
-
