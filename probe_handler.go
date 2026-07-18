@@ -127,6 +127,7 @@ func (rh *RelayHandler) executeProbeSSHReadiness(cmd RelayCommand, start time.Ti
 			code = "probe_handler_not_configured"
 		}
 		inv := targetconfigure.InspectTargetConfigForTarget(rh.probeConfigDir, cmd.TargetProfileID)
+		hint := targetConfigVisibilityHint(inv.DirectoryPresent, inv.FilePresent)
 		audit.Warn("probe.ssh.failed",
 			"Remote SSH readiness probe failed",
 			F("cmd_id", cmd.ID), F("target_profile_id", cmd.TargetProfileID),
@@ -144,7 +145,17 @@ func (rh *RelayHandler) executeProbeSSHReadiness(cmd RelayCommand, start time.Ti
 			F("private_key_readable", inv.PrivateKeyReadable),
 			F("known_hosts_present", inv.KnownHostsPresent),
 			F("known_hosts_readable", inv.KnownHostsReadable),
-			F("known_hosts_entry_found", inv.KnownHostsEntryFound))
+			F("known_hosts_entry_found", inv.KnownHostsEntryFound),
+			F("hint", hint))
+		audit.Warn("brocade.targets.inventory",
+			"Brocade target configuration inventory",
+			F("targets_dir", inv.Dir),
+			F("directory_present", inv.DirectoryPresent),
+			F("directory_readable", inv.DirectoryReadable),
+			F("targets_present", inv.FilePresent),
+			F("targets_readable", inv.FileReadable),
+			F("records_loaded", inv.RecordsLoaded),
+			F("hint", hint))
 		return RelayResult{
 			ID:             cmd.ID,
 			ResponseStatus: 200,

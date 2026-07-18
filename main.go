@@ -63,6 +63,13 @@ func resolveBrocadeTargetsWithCanonical(envOverride, configDir, canonicalDir str
 	return targetconfigure.ResolveTargetConfigStoreWithCanonical(envOverride, configDir, canonicalDir)
 }
 
+func targetConfigVisibilityHint(directoryPresent, targetsPresent bool) string {
+	if directoryPresent && !targetsPresent {
+		return "targets_directory_empty_or_bind_mount_missing"
+	}
+	return ""
+}
+
 // targetConfigureRunner matches targetconfigure.Run so main dispatch can be
 // unit-tested without invoking the real interactive wizard.
 type targetConfigureRunner func(args []string) int
@@ -167,6 +174,7 @@ func main() {
 	// earlier had this mismatch; preview.17 resolves it here.
 	brocadeTargetsResolution := resolveBrocadeTargets(os.Getenv("FILTERREX_BROCADE_TARGETS_DIR"), configDir)
 	brocadeTargetsDir := brocadeTargetsResolution.Dir
+	brocadeTargetsHint := targetConfigVisibilityHint(brocadeTargetsResolution.DirectoryPresent, brocadeTargetsResolution.Present)
 	audit.Info("host.startup", "Brocade targets directory resolved",
 		F("source", brocadeTargetsResolution.Source),
 		F("path", brocadeTargetsResolution.Dir),
@@ -176,7 +184,16 @@ func main() {
 		F("targets_present", brocadeTargetsResolution.Present),
 		F("targets_readable", brocadeTargetsResolution.Readable),
 		F("parse_successful", brocadeTargetsResolution.ParseSuccessful),
-		F("records_loaded", brocadeTargetsResolution.RecordsLoaded))
+		F("records_loaded", brocadeTargetsResolution.RecordsLoaded),
+		F("hint", brocadeTargetsHint))
+	audit.Info("brocade.targets.inventory", "Brocade target configuration inventory",
+		F("targets_dir", brocadeTargetsResolution.Dir),
+		F("directory_present", brocadeTargetsResolution.DirectoryPresent),
+		F("directory_readable", brocadeTargetsResolution.DirectoryReadable),
+		F("targets_present", brocadeTargetsResolution.Present),
+		F("targets_readable", brocadeTargetsResolution.Readable),
+		F("records_loaded", brocadeTargetsResolution.RecordsLoaded),
+		F("hint", brocadeTargetsHint))
 	if brocadeTargetsResolution.Warning != "" {
 		audit.Warn("host.startup", "Brocade target configuration resolution warning",
 			F("reason", brocadeTargetsResolution.Warning),
@@ -186,7 +203,8 @@ func main() {
 		audit.Warn("host.startup",
 			"Brocade targets.json not found — SSH readiness will be empty until the secure directory is mounted and target configure is run",
 			F("path", brocadeTargetsResolution.File),
-			F("source", brocadeTargetsResolution.Source))
+			F("source", brocadeTargetsResolution.Source),
+			F("hint", brocadeTargetsHint))
 	} else if !brocadeTargetsResolution.Readable {
 		audit.Warn("host.startup",
 			"Brocade targets.json is present but not readable — SSH readiness cannot be published",
