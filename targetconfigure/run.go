@@ -55,7 +55,6 @@ import (
 	"github.com/filterrex-ai/connector-agent/brocaderest"
 )
 
-
 // ─── config-file layout ──────────────────────────────────────────────────────
 
 const (
@@ -129,7 +128,6 @@ type readiness struct {
 	// "last verified" independently of the current state.
 	LastSuccessfulSSHProbeAt string `json:"last_successful_ssh_probe_at,omitempty"` // RFC3339
 }
-
 
 // ─── entry point ─────────────────────────────────────────────────────────────
 
@@ -288,7 +286,6 @@ func isProfileUUID(s string) bool {
 	return profileUUIDRe.MatchString(strings.TrimSpace(s))
 }
 
-
 // WizardVersion is the human-facing version string printed in the wizard
 // banner. It is intentionally a package-level var so `main` can propagate
 // the ldflag-injected host version (`main.HostVersion`) without creating
@@ -305,8 +302,6 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 	}
 	fmt.Printf("target configure (%s)\n  config-dir: %s\n  state-dir:  %s\n  profile:    %s\n  target-id:  %s\n  euid/egid:  %d/%d\n\n",
 		version, configDir, stateDir, profile, resolvedTargetID, uid, gid)
-
-
 
 	if err := ensureDirs(configDir); err != nil {
 		return err
@@ -360,13 +355,13 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 	// is aliased to `existing` below so we cannot read prior values off it
 	// after prompts overwrite them.
 	var prev struct {
-		hasSSH             bool
-		wasSSHReady        bool
-		address            string
-		sshPort            int
-		sshUsername        string
-		sshKeyPath         string
-		sshFingerprint     string
+		hasSSH         bool
+		wasSSHReady    bool
+		address        string
+		sshPort        int
+		sshUsername    string
+		sshKeyPath     string
+		sshFingerprint string
 	}
 	if existing != nil {
 		prev.address = existing.Address
@@ -424,8 +419,8 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 	if err != nil {
 		return err
 	}
-	sshKeyPath := keyMeta.KeyPath
-	sshPubPath := keyMeta.PublicKeyPath
+	sshKeyPath := managedArtifactPathForRecord(configDir, keyMeta.KeyPath, ArtifactSSHPrivateKey)
+	sshPubPath := managedArtifactPathForRecord(configDir, keyMeta.PublicKeyPath, ArtifactSSHPublicKey)
 
 	// 5) host-key enrollment with out-of-band challenge. `hostKeyRefreshed`
 	// is true whenever the operator accepted a new host key this run — in
@@ -435,21 +430,22 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 	if hkErr != nil {
 		fmt.Fprintf(os.Stderr, "\nhost-key enrollment failed: %v\n", hkErr)
 	}
+	knownHostsRecordPath := managedArtifactPathForRecord(configDir, knownHostsPath, ArtifactKnownHosts)
 
 	// Assemble the working record before probes.
 	rec.REST = &restEntry{
 		TransportMode: string(brocaderest.TransportHTTPSVerified),
 		Username:      restUser,
-		PasswordFile:  restPasswordFile,
+		PasswordFile:  managedArtifactPathForRecord(configDir, restPasswordFile, ArtifactRESTSecret),
 	}
 	if existing != nil && existing.REST != nil && existing.REST.CAFile != "" {
-		rec.REST.CAFile = existing.REST.CAFile
+		rec.REST.CAFile = managedArtifactPathForRecord(configDir, existing.REST.CAFile, ArtifactTLSMaterial)
 	}
 	rec.SSH = &sshEntry{
 		Username:             sshUser,
 		KeyPath:              sshKeyPath,
 		PublicKeyPath:        sshPubPath,
-		KnownHostsPath:       knownHostsPath,
+		KnownHostsPath:       knownHostsRecordPath,
 		KeyAlgorithm:         keyMeta.Algorithm,
 		KeyBits:              keyMeta.Bits,
 		KeyOrigin:            keyMeta.Origin,
@@ -457,7 +453,7 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 	}
 
 	// 6) REST probe
-	restReady, restReason := probeREST(rec, restSecState)
+	restReady, restReason := probeREST(configDir, rec, restSecState)
 	rec.Readiness.RESTReady = restReady
 	rec.Readiness.RESTReason = restReason
 	rec.Readiness.RESTSecurityState = restSecState
@@ -499,7 +495,7 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 		keyReused &&
 		identityUnchanged
 	if canRegressionProbe {
-		r, reason := probeSSH(rec)
+		r, reason := probeSSH(configDir, rec)
 		sshReady = r
 		nowStr := time.Now().UTC().Format(time.RFC3339)
 		rec.Readiness.LastSSHProbeAt = nowStr
@@ -520,8 +516,6 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 
 	rec.LastWizard = time.Now().UTC().Format(time.RFC3339)
 
-
-
 	// 8) atomic write, preserving other profiles' entries.
 	if doc.Targets == nil {
 		doc.Targets = map[string]*targetRecord{}
@@ -540,7 +534,7 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 		fmt.Println("run `connector-agent target probe --profile <uuid>` to prove end-to-end SSH readiness.")
 	}
 	if sshPubPath != "" {
-		fmt.Printf("\nSSH public key to install on the switch (read-only account):\n  %s\n", sshPubPath)
+		fmt.Printf("\nSSH public key to install on the switch (read-only account):\n  %s\n", keyMeta.PublicKeyPath)
 	}
 
 	// Post-configure interactive menu — NEVER auto-probes. The default action
@@ -550,7 +544,7 @@ func run(configDir, stateDir, profile, resolvedTargetID string, kc keyChoice) er
 	// that will move a `setup_pending` record forward inside the wizard: we
 	// deliberately never auto-forward-probe based on unchanged inputs alone.
 	if !sshReady {
-		postConfigureMenu(configDir, doc, profile, rec, sshPubPath)
+		postConfigureMenu(configDir, doc, profile, rec, keyMeta.PublicKeyPath)
 	}
 	return nil
 }
@@ -580,7 +574,7 @@ func postConfigureMenu(configDir string, doc *targetsDoc, profile string, rec *t
 		choice := prompt("Choice", "3")
 		switch strings.TrimSpace(choice) {
 		case "1":
-			ready, reason := probeSSH(rec)
+			ready, reason := probeSSH(configDir, rec)
 			nowStr := time.Now().UTC().Format(time.RFC3339)
 			rec.Readiness.SSHReady = ready
 			rec.Readiness.LastSSHProbeAt = nowStr
@@ -635,13 +629,13 @@ func mapProbeStage(reason string) string {
 	switch reason {
 	case "ssh_connection_failed":
 		return "dial_failed"
-	case "host_key_verification_failed", "known_hosts_missing":
+	case "host_key_verification_failed", "known_hosts_missing", "known_hosts_not_found", "host_key_not_configured":
 		return "host_key_verification_failed"
 	case "ssh_auth_failed":
 		return "auth_failed"
 	case "read_only_probe_failed":
 		return "auth_ok"
-	case "missing_ssh_key":
+	case "missing_ssh_key", "ssh_key_not_found", "ssh_key_unreadable", "unmanaged_artifact_path":
 		return "not_run"
 	default:
 		return "auth_failed"
@@ -707,7 +701,7 @@ func RunProbe(args []string) int {
 		return 1
 	}
 
-	ready, reason := probeSSH(rec)
+	ready, reason := probeSSH(*configDir, rec)
 	nowStr := time.Now().UTC().Format(time.RFC3339)
 	rec.Readiness.SSHReady = ready
 	rec.Readiness.LastSSHProbeAt = nowStr
@@ -743,7 +737,6 @@ func describeKey(s *sshEntry) string {
 	}
 	return strings.ToUpper(s.KeyAlgorithm)
 }
-
 
 func stateLine(ready bool, reason string) string {
 	if ready {
@@ -790,9 +783,7 @@ func verifyConnectorIdentity(stateDir string) error {
 	return errors.New("no connector identity found in state-dir")
 }
 
-var (
-	hostRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,253}$`)
-)
+var hostRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,253}$`)
 
 func promptAddressAndPorts(existing *targetRecord) (string, int, int, error) {
 	defAddr := existing.Address
@@ -1121,7 +1112,6 @@ func sshFingerprintSHA256(pub ssh.PublicKey) string {
 	return "SHA256:" + strings.TrimRight(base64.StdEncoding.EncodeToString(sum[:]), "=")
 }
 
-
 func enrollHostKey(configDir, host string, sshPort int, existing *targetRecord) (string, bool, error) {
 	khPath := filepath.Join(configDir, knownHostsFn)
 
@@ -1208,15 +1198,31 @@ func hasKnownHostEntry(path, host string) bool {
 	return false
 }
 
-func probeREST(rec *targetRecord, _ string) (bool, string) {
+func probeREST(targetsDir string, rec *targetRecord, _ string) (bool, string) {
+	passwordFile := rec.REST.PasswordFile
+	if passwordFile != "" {
+		resolved, err := ResolveManagedTargetArtifact(targetsDir, passwordFile, ArtifactRESTSecret)
+		if err != nil {
+			return false, TargetConfigUnmanagedArtifact
+		}
+		passwordFile = resolved
+	}
+	caFile := rec.REST.CAFile
+	if caFile != "" {
+		resolved, err := ResolveManagedTargetArtifact(targetsDir, caFile, ArtifactTLSMaterial)
+		if err != nil {
+			return false, TargetConfigUnmanagedArtifact
+		}
+		caFile = resolved
+	}
 	cfg := brocaderest.Config{
 		TargetProfileID: "wizard-probe",
 		Host:            rec.Address,
 		Port:            rec.RESTPort,
 		TransportMode:   brocaderest.TransportMode(rec.REST.TransportMode),
 		Username:        rec.REST.Username,
-		PasswordFile:    rec.REST.PasswordFile,
-		CAFile:          rec.REST.CAFile,
+		PasswordFile:    passwordFile,
+		CAFile:          caFile,
 	}
 	client, err := brocaderest.New(cfg)
 	if err != nil {
@@ -1234,19 +1240,30 @@ func probeREST(rec *targetRecord, _ string) (bool, string) {
 	return true, ""
 }
 
-func probeSSH(rec *targetRecord) (bool, string) {
-	keyBytes, err := os.ReadFile(rec.SSH.KeyPath)
+func probeSSH(targetsDir string, rec *targetRecord) (bool, string) {
+	keyPath, err := ResolveManagedTargetArtifact(targetsDir, rec.SSH.KeyPath, ArtifactSSHPrivateKey)
 	if err != nil {
-		return false, "missing_ssh_key"
+		return false, TargetConfigUnmanagedArtifact
+	}
+	knownHostsPath, err := ResolveManagedTargetArtifact(targetsDir, rec.SSH.KnownHostsPath, ArtifactKnownHosts)
+	if err != nil {
+		return false, TargetConfigUnmanagedArtifact
+	}
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, TargetConfigKeyMissing
+		}
+		return false, TargetConfigKeyUnreadable
 	}
 	signer, perr := ssh.ParsePrivateKey(keyBytes)
 	zeroBytes(keyBytes)
 	if perr != nil {
-		return false, "missing_ssh_key"
+		return false, TargetConfigKeyUnreadable
 	}
-	cb, err := hostKeyCallbackFromFile(rec.SSH.KnownHostsPath)
+	cb, err := hostKeyCallbackFromFile(knownHostsPath)
 	if err != nil {
-		return false, "known_hosts_missing"
+		return false, TargetConfigKnownHostsMissing
 	}
 	cfg := &ssh.ClientConfig{
 		User:            rec.SSH.Username,
@@ -1422,6 +1439,7 @@ func firstNonEmpty(a, b string) string {
 	}
 	return b
 }
+
 func firstNonZero(a, b int) int {
 	if a != 0 {
 		return a

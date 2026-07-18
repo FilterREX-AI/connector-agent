@@ -2,18 +2,23 @@ package targetconfigure
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 const (
-	TargetConfigOK         = "ok"
-	TargetConfigMissing    = "target_configuration_missing"
-	TargetConfigUnreadable = "target_configuration_unreadable"
-	TargetConfigNoTarget   = "target_not_configured"
-	TargetConfigDuplicate  = "duplicate_target_id"
-	TargetConfigKeyMissing = "ssh_key_not_found"
+	TargetConfigOK                = "ok"
+	TargetConfigMissing           = "target_configuration_missing"
+	TargetConfigUnreadable        = "target_configuration_unreadable"
+	TargetConfigNoTarget          = "target_not_configured"
+	TargetConfigDuplicate         = "duplicate_target_id"
+	TargetConfigKeyMissing        = "ssh_key_not_found"
+	TargetConfigKeyUnreadable     = "ssh_key_unreadable"
+	TargetConfigKnownHostsMissing = "known_hosts_not_found"
+	TargetConfigHostKeyMissing    = "host_key_not_configured"
+	TargetConfigUnmanagedArtifact = "unmanaged_artifact_path"
 
 	DefaultBrocadeTargetsDir = "/etc/filterrex/targets"
 )
@@ -203,21 +208,50 @@ func InspectTargetConfigForTarget(targetsDir, targetID string) TargetConfigTarge
 	}
 
 	out.SSHUsernamePresent = strings.TrimSpace(match.SSH.Username) != ""
-	out.PrivateKeyPresent, out.PrivateKeyReadable = filePresence(match.SSH.KeyPath)
-	out.PublicKeyPresent, out.PublicKeyReadable = filePresence(match.SSH.PublicKeyPath)
-	out.KnownHostsPresent, out.KnownHostsReadable = filePresence(match.SSH.KnownHostsPath)
-	if match.SSH.KnownHostsPath != "" && match.Address != "" {
-		if _, err := readKnownHostFingerprint(match.SSH.KnownHostsPath, match.Address); err == nil {
+	privateKeyPath, privateKeyErr := ResolveManagedTargetArtifact(targetsDir, match.SSH.KeyPath, ArtifactSSHPrivateKey)
+	publicKeyPath, publicKeyErr := ResolveManagedTargetArtifact(targetsDir, match.SSH.PublicKeyPath, ArtifactSSHPublicKey)
+	knownHostsPath, knownHostsErr := ResolveManagedTargetArtifact(targetsDir, match.SSH.KnownHostsPath, ArtifactKnownHosts)
+	if privateKeyErr != nil || knownHostsErr != nil || isUnmanagedArtifactError(publicKeyErr) {
+		out.ResolvedStatus = TargetConfigUnmanagedArtifact
+		return out
+	}
+	out.PrivateKeyPresent, out.PrivateKeyReadable = filePresence(privateKeyPath)
+	if publicKeyErr == nil {
+		out.PublicKeyPresent, out.PublicKeyReadable = filePresence(publicKeyPath)
+	}
+	out.KnownHostsPresent, out.KnownHostsReadable = filePresence(knownHostsPath)
+	if knownHostsPath != "" && match.Address != "" {
+		if _, err := readKnownHostFingerprint(targetsDir, match.SSH.KnownHostsPath, match.Address); err == nil {
 			out.KnownHostsEntryFound = true
 		}
 	}
 
-	if !out.SSHUsernamePresent || !out.PrivateKeyReadable || !out.KnownHostsReadable || !out.KnownHostsEntryFound {
+	switch {
+	case !out.SSHUsernamePresent || !out.PrivateKeyPresent:
 		out.ResolvedStatus = TargetConfigKeyMissing
+		return out
+	case !out.PrivateKeyReadable:
+		out.ResolvedStatus = TargetConfigKeyUnreadable
+		return out
+	case !out.KnownHostsPresent:
+		out.ResolvedStatus = TargetConfigKnownHostsMissing
+		return out
+	case !out.KnownHostsReadable:
+		out.ResolvedStatus = TargetConfigUnreadable
+		return out
+	case !out.KnownHostsEntryFound:
+		out.ResolvedStatus = TargetConfigHostKeyMissing
 		return out
 	}
 	out.ResolvedStatus = TargetConfigOK
 	return out
+}
+
+func isUnmanagedArtifactError(err error) bool {
+	return errors.Is(err, ErrManagedArtifactUnmanaged) ||
+		errors.Is(err, ErrManagedArtifactTraversal) ||
+		errors.Is(err, ErrManagedArtifactOutsideDir) ||
+		errors.Is(err, ErrManagedArtifactControl)
 }
 
 func filePresence(path string) (present bool, readable bool) {

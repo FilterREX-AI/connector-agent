@@ -148,7 +148,7 @@ func LoadSSHReadinessSnapshotWithRuntime(targetsDir, runtimeStateDir string) (ma
 			LastProbeAt:             rec.Readiness.LastSSHProbeAt,
 			LastSuccessfulProbeAt:   rec.Readiness.LastSuccessfulSSHProbeAt,
 		}
-		if fp, err := readKnownHostFingerprint(rec.SSH.KnownHostsPath, rec.Address); err == nil {
+		if fp, err := readKnownHostFingerprint(targetsDir, rec.SSH.KnownHostsPath, rec.Address); err == nil {
 			s.SwitchHostKeyFingerprint = fp
 		}
 		// Overlay sidecar readiness when the fingerprint matches the
@@ -156,7 +156,7 @@ func LoadSSHReadinessSnapshotWithRuntime(targetsDir, runtimeStateDir string) (ma
 		// changed keys/username/address and the last probe is no longer
 		// authoritative.
 		if entry, ok := sidecar[targetID]; ok {
-			if entry.ConfigFingerprint == ConfigFingerprintFromRecord(rec) {
+			if entry.ConfigFingerprint == ConfigFingerprintFromRecord(targetsDir, rec) {
 				s.SSHReady = entry.SSHReady
 				s.SSHReason = entry.SSHReason
 				s.SSHProbeStage = entry.SSHProbeStage
@@ -181,9 +181,16 @@ func LoadSSHReadinessSnapshotWithRuntime(targetsDir, runtimeStateDir string) (ma
 // deliberately best-effort: any error (file missing, unparseable, no match)
 // returns an empty string with the error. The heartbeat still publishes
 // SSH readiness when this cannot be computed.
-func readKnownHostFingerprint(khPath, host string) (string, error) {
+func readKnownHostFingerprint(targetsDir, khPath, host string) (string, error) {
 	if khPath == "" || host == "" {
 		return "", os.ErrNotExist
+	}
+	if strings.TrimSpace(targetsDir) != "" {
+		resolved, err := ResolveManagedTargetArtifact(targetsDir, khPath, ArtifactKnownHosts)
+		if err != nil {
+			return "", err
+		}
+		khPath = resolved
 	}
 	b, err := os.ReadFile(khPath)
 	if err != nil {

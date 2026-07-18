@@ -174,7 +174,7 @@ func runProbeForTargetImpl(ctx context.Context, targetsDir, runtimeStateDir, tar
 		return ProbeOutcome{}, err
 	}
 
-	ready, reason := probeSSH(matchRec)
+	ready, reason := probeSSH(targetsDir, matchRec)
 	nowStr := time.Now().UTC().Format(time.RFC3339)
 	stage := "command_succeeded"
 	if !ready {
@@ -188,7 +188,7 @@ func runProbeForTargetImpl(ctx context.Context, targetsDir, runtimeStateDir, tar
 	if useSidecar {
 		rec := RuntimeReadinessRecord{
 			TargetID:              canon,
-			ConfigFingerprint:     ConfigFingerprintFromRecord(matchRec),
+			ConfigFingerprint:     ConfigFingerprintFromRecord(targetsDir, matchRec),
 			SSHReady:              ready,
 			SSHReason:             "",
 			SSHProbeStage:         stage,
@@ -232,7 +232,7 @@ func runProbeForTargetImpl(ctx context.Context, targetsDir, runtimeStateDir, tar
 	if !ready {
 		out.Reason = reason
 	}
-	if fp, ferr := readKnownHostFingerprint(matchRec.SSH.KnownHostsPath, matchRec.Address); ferr == nil {
+	if fp, ferr := readKnownHostFingerprint(targetsDir, matchRec.SSH.KnownHostsPath, matchRec.Address); ferr == nil {
 		out.SwitchHostKeyFingerprint = fp
 	}
 	return out, nil

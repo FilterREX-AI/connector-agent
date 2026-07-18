@@ -100,5 +100,13 @@ func printDoctorHint(status string) {
 		fmt.Println("Next: remove duplicate records that resolve to the same application target UUID; the agent drops ambiguous readiness.")
 	case TargetConfigKeyMissing:
 		fmt.Println("Next: rerun target configure for this target and verify the key and known_hosts files are on the same mounted secure directory.")
+	case TargetConfigKeyUnreadable:
+		fmt.Println("Next: fix permissions so the daemon container can read the managed private key file.")
+	case TargetConfigKnownHostsMissing:
+		fmt.Println("Next: rerun target configure and complete host-key enrollment so known_hosts is written into the secure directory.")
+	case TargetConfigHostKeyMissing:
+		fmt.Println("Next: rerun target configure and confirm the switch host-key fingerprint for this target address.")
+	case TargetConfigUnmanagedArtifact:
+		fmt.Println("Next: upgrade to the path-resolution release, then rerun target configure so managed artifact paths are relative to the secure directory.")
 	}
 }

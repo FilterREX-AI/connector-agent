@@ -8,10 +8,10 @@
 //
 // This module separates the two facts:
 //
-//   • targets.json (owned by `target configure`, may be RO for the daemon)
+//   - targets.json (owned by `target configure`, may be RO for the daemon)
 //     — immutable per-target identity, address, keys, host key.
 //
-//   • brocade-ssh-readiness.json (this file) — mutable, daemon-writable,
+//   - brocade-ssh-readiness.json (this file) — mutable, daemon-writable,
 //     lives under a *writable* runtime-state directory (default
 //     <configDir>/state, typically /etc/filterrex/state on the docker volume).
 //     Records last probe outcome, timestamps, and a configuration fingerprint
@@ -53,18 +53,18 @@ var (
 // state. Fingerprint fields are copied from the target record at probe time
 // so a later key/address change invalidates the entry automatically.
 type RuntimeReadinessRecord struct {
-	TargetID                 string `json:"target_id"`
-	ConfigFingerprint        string `json:"config_fingerprint"`
-	SSHReady                 bool   `json:"ssh_ready"`
-	SSHReason                string `json:"ssh_reason,omitempty"`
-	SSHProbeStage            string `json:"ssh_probe_stage,omitempty"`
-	LastProbeAt              string `json:"last_probe_at,omitempty"`
-	LastSuccessfulProbeAt    string `json:"last_successful_probe_at,omitempty"`
+	TargetID              string `json:"target_id"`
+	ConfigFingerprint     string `json:"config_fingerprint"`
+	SSHReady              bool   `json:"ssh_ready"`
+	SSHReason             string `json:"ssh_reason,omitempty"`
+	SSHProbeStage         string `json:"ssh_probe_stage,omitempty"`
+	LastProbeAt           string `json:"last_probe_at,omitempty"`
+	LastSuccessfulProbeAt string `json:"last_successful_probe_at,omitempty"`
 }
 
 type runtimeReadinessDoc struct {
-	Version int                                `json:"version"`
-	Targets map[string]RuntimeReadinessRecord  `json:"targets"`
+	Version int                               `json:"version"`
+	Targets map[string]RuntimeReadinessRecord `json:"targets"`
 	// UpdatedAt is informational only — the merge never trusts a clock
 	// alone, always a fingerprint.
 	UpdatedAt string `json:"updated_at,omitempty"`
@@ -75,7 +75,7 @@ type runtimeReadinessDoc struct {
 // the small set of fields that authorize an SSH login — anything else
 // (labels, readiness itself) is deliberately excluded so probe overwrites
 // don't roll the fingerprint.
-func ConfigFingerprintFromRecord(rec *targetRecord) string {
+func ConfigFingerprintFromRecord(targetsDir string, rec *targetRecord) string {
 	if rec == nil {
 		return ""
 	}
@@ -89,7 +89,7 @@ func ConfigFingerprintFromRecord(rec *targetRecord) string {
 		khPath = rec.SSH.KnownHostsPath
 	}
 	hostKey := ""
-	if fp, err := readKnownHostFingerprint(khPath, rec.Address); err == nil {
+	if fp, err := readKnownHostFingerprint(targetsDir, khPath, rec.Address); err == nil {
 		hostKey = fp
 	}
 	raw := strings.Join([]string{
