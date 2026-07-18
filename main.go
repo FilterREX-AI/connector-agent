@@ -49,6 +49,18 @@ func displayVersion() string {
 	return "v" + v
 }
 
+// resolveBrocadeTargetsDir returns the directory the daemon should read
+// targets.json from. Precedence: FILTERREX_BROCADE_TARGETS_DIR env override,
+// then <configDir>/targets. Whitespace-only env values are treated as unset.
+// Kept as a pure function so preview.17's fix has a regression test that
+// does not depend on process env or the filesystem.
+func resolveBrocadeTargetsDir(envOverride, configDir string) string {
+	if v := strings.TrimSpace(envOverride); v != "" {
+		return v
+	}
+	return filepath.Join(configDir, "targets")
+}
+
 // targetConfigureRunner matches targetconfigure.Run so main dispatch can be
 // unit-tested without invoking the real interactive wizard.
 type targetConfigureRunner func(args []string) int
@@ -140,6 +152,31 @@ func main() {
 		configDir = defaultConfigDir
 	}
 
+	// Brocade `target configure` / `target probe` write targets.json into a
+	// dedicated subdirectory that is bind-mounted read-only into the
+	// daemon container at /etc/filterrex/targets (see
+	// src/types/connector.ts::getDockerRunCommand). The daemon MUST read
+	// its per-target SSH readiness from that same directory — not from the
+	// top-level configDir — or the heartbeat will publish REST-only
+	// readiness and every "Collect from agent" request will fail the
+	// server-side readiness gate with `ssh_not_ready`. Preview.16 and
+	// earlier had this mismatch; preview.17 resolves it here.
+	brocadeTargetsDir := resolveBrocadeTargetsDir(os.Getenv("FILTERREX_BROCADE_TARGETS_DIR"), configDir)
+	audit.Info("host.startup", "Brocade targets directory resolved",
+		F("path", brocadeTargetsDir))
+	if _, err := os.Stat(filepath.Join(brocadeTargetsDir, "targets.json")); err != nil {
+		if os.IsNotExist(err) {
+			audit.Warn("host.startup",
+				"Brocade targets.json not found — SSH readiness will be empty until `target configure` is run",
+				F("path", filepath.Join(brocadeTargetsDir, "targets.json")))
+		} else {
+			audit.Warn("host.startup",
+				"Brocade targets.json stat failed",
+				F("path", filepath.Join(brocadeTargetsDir, "targets.json")),
+				F("error", err.Error()))
+		}
+	}
+
 	hybridMode := envBool("FILTERREX_HYBRID_MODE")
 	if hybridMode {
 		audit.Info("host.startup",
@@ -222,10 +259,11 @@ func main() {
 
 	// Create supervisor
 	supervisor := NewSupervisor(store, backend)
-	// Point the supervisor at the same config dir the `target configure` /
-	// `target probe` CLIs write targets.json into, so persisted SSH
-	// readiness (per-target) can be published on the heartbeat manifest.
-	supervisor.SetTargetConfigDir(configDir)
+	// Point the supervisor at the Brocade targets subdirectory that the
+	// `target configure` / `target probe` wizards write targets.json into.
+	// This is /etc/filterrex/targets by default (bind-mounted from the
+	// host's /opt/filterrex/secure) — NOT the top-level configDir.
+	supervisor.SetTargetConfigDir(brocadeTargetsDir)
 
 
 
@@ -434,9 +472,9 @@ func main() {
 		// is on) the localRelayHandler both execute the `brocade-probe`
 		// platform. Give both a config-dir + heartbeat trigger so the
 		// probe capability can be advertised.
-		syncManager.RelayHandler().SetProbeContext(configDir, syncManager)
+		syncManager.RelayHandler().SetProbeContext(brocadeTargetsDir, syncManager)
 		if localRelayHandler != nil {
-			localRelayHandler.SetProbeContext(configDir, syncManager)
+			localRelayHandler.SetProbeContext(brocadeTargetsDir, syncManager)
 		}
 		// Advertise probe_brocade_ssh_readiness_v1 only once we know a
 		// probe handler is fully wired. LAN-only is re-checked each

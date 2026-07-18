@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -1032,13 +1034,14 @@ func (s *Supervisor) BuildCapabilityManifest() HostCapabilityManifest {
 			for _, w := range warns {
 				fmt.Printf("[supervisor] warn: %s\n", w.String())
 			}
-			// Per-heartbeat one-liner so operators can grep the host log to
-			// confirm targets.json was read and how many SSH entries the
-			// merge will publish. Never logs secrets or key material.
-			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=%s published=%d warnings=%d\n",
-				s.targetConfigDir, len(sshSnap), len(warns))
+			// Per-heartbeat one-liner so operators can grep the host log
+			// to confirm targets.json was read and how many SSH entries
+			// the merge will publish. Never logs secrets or key material.
+			_, statErr := os.Stat(filepath.Join(s.targetConfigDir, "targets.json"))
+			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=%s file_present=%t published=%d warnings=%d\n",
+				s.targetConfigDir, statErr == nil, len(sshSnap), len(warns))
 		} else {
-			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=<unset> published=0 warnings=0\n")
+			fmt.Printf("[supervisor] brocade ssh snapshot: config_dir=<unset> file_present=false published=0 warnings=0\n")
 		}
 		brocade.PerTarget = mergeBrocadePerTargetReadiness(restSnap, sshSnap, time.Now().UTC())
 	}
